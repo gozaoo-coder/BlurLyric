@@ -296,6 +296,18 @@ export default {
             </template>
         </toggle_lineRow>
     </tracksRow>
+    <h2>数据管理</h2>
+    <tracksRow>
+        <linkLine @click="this.$router.push('/dataManager/')">
+            <template #icon>
+                <i class="bi bi-database-fill-gear"></i>
+            </template>
+            <template #text>
+                数据管理
+            </template>
+        </linkLine>
+    </tracksRow>
+
     <h2>其他</h2>
     <tracksRow>
         <linkLine @click="this.$router.push('/demo/')">

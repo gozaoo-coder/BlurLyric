@@ -10,12 +10,15 @@ const router =[
     },
     {
         path: '/musicFolder/', component: ()=>import('./routers/musicFolder.vue')
-    },,
+    },
     {
         path: '/musicTrack/', component: ()=>import('./routers/musicTrack.vue')
     },
     {
         path: '/setting/', component: ()=>import('./routers/setting.vue')
+    },
+    {
+        path: '/dataManager/', component: ()=>import('./routers/dataManager.vue')
     },
     {
         path: '/demo/',component:()=>import('./routers/demo.vue')

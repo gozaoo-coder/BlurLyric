@@ -272,6 +272,53 @@ export class TauriSource extends Source {
         }
     }
 
+    /**
+     * 获取缓存大小信息
+     */
+    async getCacheSizeInfo() {
+        try {
+            const info = await invoke('get_cache_size_info');
+            return {
+                totalSize: info.total_size,
+                imageCacheSize: info.image_cache_size,
+                dataCacheSize: info.data_cache_size,
+                imageCount: info.image_count,
+                fileCount: info.file_count
+            };
+        } catch (e) {
+            console.error('Failed to get cache size info:', e);
+            throw e;
+        }
+    }
+
+    /**
+     * 清除图片缓存
+     */
+    async clearImageCache() {
+        try {
+            const deletedCount = await invoke('clear_image_cache');
+            console.log(`Cleared ${deletedCount} image cache files`);
+            return deletedCount;
+        } catch (e) {
+            console.error('Failed to clear image cache:', e);
+            throw e;
+        }
+    }
+
+    /**
+     * 重置所有应用数据
+     */
+    async resetAllData() {
+        try {
+            await invoke('reset_all_data');
+            lazyLoader.clearCache();
+            console.log('All application data has been reset');
+        } catch (e) {
+            console.error('Failed to reset all data:', e);
+            throw e;
+        }
+    }
+
     // ========== 专辑操作 ==========
 
     async getAlbums() {

@@ -276,10 +276,151 @@ fn get_all_my_artists() -> Result<Vec<Artist>, String> {
 #[tauri::command]
 fn get_music_list() -> Result<Vec<Song>, String> {
     let cache = MUSIC_CACHE.lock().unwrap();
-    Ok(cache
+    let all_songs: Vec<Song> = cache
         .values()
         .flat_map(|songs| songs.iter().cloned())
-        .collect())
+        .collect();
+    
+    // 执行去重合并
+    let deduplicated = deduplicate_songs(all_songs);
+    Ok(deduplicated)
+}
+
+/// 对歌曲列表进行去重合并
+fn deduplicate_songs(songs: Vec<Song>) -> Vec<Song> {
+    use std::collections::HashMap;
+    
+    // 使用指纹作为key进行分组
+    let mut groups: HashMap<String, Vec<Song>> = HashMap::new();
+    
+    for song in songs {
+        // 生成指纹（标准化后的标题+艺术家+专辑）
+        let fingerprint = generate_fingerprint(&song);
+        groups.entry(fingerprint).or_insert_with(Vec::new).push(song);
+    }
+    
+    // 合并每组歌曲
+    let mut result = Vec::new();
+    for (_, group) in groups {
+        if group.len() == 1 {
+            // 只有一首，直接添加
+            result.push(group.into_iter().next().unwrap());
+        } else {
+            // 有多首，合并它们
+            let merged = merge_songs(group);
+            result.push(merged);
+        }
+    }
+    
+    result
+}
+
+/// 生成歌曲指纹
+fn generate_fingerprint(song: &Song) -> String {
+    let normalized_title = normalize_for_dedup(&song.name);
+    let normalized_artists: Vec<String> = song.ar.iter()
+        .map(|a| normalize_for_dedup(&a.name))
+        .collect();
+    let normalized_album = normalize_for_dedup(&song.al.name);
+    
+    format!("{}|{}|{}", 
+        normalized_title,
+        normalized_artists.join("&"),
+        normalized_album
+    )
+}
+
+/// 标准化字符串（用于去重）
+fn normalize_for_dedup(s: &str) -> String {
+    s.to_lowercase()
+        .trim()
+        .replace(" ", "")
+        .replace("_", "")
+        .replace("-", "")
+        .replace("'", "")
+        .replace("\"", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace("[", "")
+        .replace("]", "")
+        .replace("，", "")
+        .replace(",", "")
+}
+
+/// 合并多首相同歌曲（按音质排序）
+fn merge_songs(mut songs: Vec<Song>) -> Song {
+    // 按音质评分排序（降序）
+    songs.sort_by(|a, b| {
+        let score_a = calculate_song_quality_score(a);
+        let score_b = calculate_song_quality_score(b);
+        score_b.cmp(&score_a)
+    });
+    
+    // 主歌曲（音质最高的）
+    let mut primary = songs.remove(0);
+    
+    // 收集所有来源
+    let mut all_sources = primary.sources.clone();
+    
+    // 添加其他歌曲的来源
+    for song in songs {
+        all_sources.extend(song.sources);
+    }
+    
+    // 重新计算音质评分并排序来源
+    all_sources.sort_by(|a, b| b.quality_score.cmp(&a.quality_score));
+    
+    // 更新主歌曲的来源信息
+    primary.sources = all_sources;
+    primary.primary_source_index = 0;
+    
+    // 更新主歌曲的路径为音质最高的来源
+    if let Some(best_source) = primary.sources.first() {
+        primary.src = PathBuf::from(&best_source.path);
+    }
+    
+    primary
+}
+
+/// 计算歌曲音质评分
+fn calculate_song_quality_score(song: &Song) -> u32 {
+    let mut score = 0u32;
+    
+    // 比特率分数
+    if let Some(bitrate) = song.bitrate {
+        score += bitrate.min(320);
+    }
+    
+    // 格式分数
+    let format = song.src.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("unknown");
+    
+    score += match format.to_lowercase().as_str() {
+        "flac" => 500,
+        "wav" | "aiff" => 400,
+        "aac" | "m4a" => 300,
+        "mp3" => 200,
+        "ogg" => 250,
+        "wma" => 150,
+        _ => 100,
+    };
+    
+    // 采样率分数
+    if let Some(sample_rate) = song.sample_rate {
+        score += (sample_rate / 100).min(480);
+    }
+    
+    // 时长分数
+    if let Some(duration) = song.duration {
+        if duration > 180.0 {
+            score += 100;
+        } else if duration > 60.0 {
+            score += 50;
+        }
+    }
+    
+    score
 }
 
 #[tauri::command]
@@ -305,13 +446,19 @@ fn get_album_by_id(album_id: u32) -> Result<Album, String> {
 #[tauri::command]
 fn get_artists_songs_by_id(artist_id: u32) -> Result<Vec<Song>, String> {
     let artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap();
-    Ok(artist_songs_map.get(&artist_id).cloned().unwrap())
+    let songs = artist_songs_map.get(&artist_id).cloned().unwrap_or_default();
+    // 执行去重合并
+    let deduplicated = deduplicate_songs(songs);
+    Ok(deduplicated)
 }
 
 #[tauri::command]
 fn get_albums_songs_by_id(album_id: u32) -> Result<Vec<Song>, String> {
     let album_songs_map = ALBUM_SONGS_MAP.lock().unwrap();
-    Ok(album_songs_map.get(&album_id).cloned().unwrap())
+    let songs = album_songs_map.get(&album_id).cloned().unwrap_or_default();
+    // 执行去重合并
+    let deduplicated = deduplicate_songs(songs);
+    Ok(deduplicated)
 }
 
 // 扫描文件夹中的音乐文件
@@ -1323,6 +1470,122 @@ fn add_music_dirs(new_dirs: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
+// 缓存大小信息结构体
+#[derive(Debug, Serialize, Deserialize)]
+struct CacheSizeInfo {
+    total_size: u64,
+    image_cache_size: u64,
+    data_cache_size: u64,
+    image_count: u32,
+    file_count: u32,
+}
+
+// 获取缓存大小信息
+#[tauri::command]
+fn get_cache_size_info() -> Result<CacheSizeInfo, String> {
+    let cache_dir = get_cache_dir()?;
+
+    let mut total_size = 0u64;
+    let mut image_cache_size = 0u64;
+    let mut data_cache_size = 0u64;
+    let mut image_count = 0u32;
+    let mut file_count = 0u32;
+
+    if cache_dir.exists() {
+        for entry in fs::read_dir(&cache_dir).map_err(|e| e.to_string())? {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if let Ok(metadata) = entry.metadata() {
+                    let size = metadata.len();
+                    total_size += size;
+                    file_count += 1;
+
+                    let file_name = path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("");
+
+                    if file_name.starts_with("album_") && file_name.ends_with(".webp") {
+                        image_cache_size += size;
+                        image_count += 1;
+                    } else {
+                        data_cache_size += size;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(CacheSizeInfo {
+        total_size,
+        image_cache_size,
+        data_cache_size,
+        image_count,
+        file_count,
+    })
+}
+
+// 清除图片缓存
+#[tauri::command]
+fn clear_image_cache() -> Result<u32, String> {
+    let cache_dir = get_cache_dir()?;
+    let mut deleted_count = 0u32;
+
+    if cache_dir.exists() {
+        for entry in fs::read_dir(&cache_dir).map_err(|e| e.to_string())? {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                let file_name = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+
+                if file_name.starts_with("album_") && file_name.ends_with(".webp") {
+                    fs::remove_file(&path).map_err(|e| {
+                        format!("Failed to delete {}: {}", file_name, e)
+                    })?;
+                    deleted_count += 1;
+                }
+            }
+        }
+    }
+
+    println!("Cleared {} image cache files", deleted_count);
+    Ok(deleted_count)
+}
+
+// 重置所有应用数据
+#[tauri::command]
+fn reset_all_data() -> Result<(), String> {
+    let cache_dir = get_cache_dir()?;
+
+    // 1. 清空内存缓存
+    *SONG_ID_COUNTER.lock().unwrap() = 0;
+    *ARTIST_ID_COUNTER.lock().unwrap() = 0;
+    *ALBUM_ID_COUNTER.lock().unwrap() = 0;
+    MUSIC_CACHE.lock().unwrap().clear();
+    ARTIST_CACHE.lock().unwrap().clear();
+    ALBUM_CACHE.lock().unwrap().clear();
+    ARTIST_SONGS_MAP.lock().unwrap().clear();
+    ALBUM_SONGS_MAP.lock().unwrap().clear();
+    MUSIC_DIRS.lock().unwrap().clear();
+
+    // 2. 删除缓存目录中的所有文件
+    if cache_dir.exists() {
+        for entry in fs::read_dir(&cache_dir).map_err(|e| e.to_string())? {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.is_file() {
+                    fs::remove_file(&path).map_err(|e| {
+                        format!("Failed to delete {}: {}", path.display(), e)
+                    })?;
+                }
+            }
+        }
+    }
+
+    println!("All application data has been reset");
+    Ok(())
+}
+
 // 新增的关闭应用的方法
 #[tauri::command]
 fn close_app(window: tauri::Window) {
@@ -1357,6 +1620,10 @@ pub fn run() {
             init_application,
             add_users_music_dir,
             get_users_music_dir,
+            // 数据管理命令
+            get_cache_size_info,
+            clear_image_cache,
+            reset_all_data,
             // 缓存管理命令
             cache_manager::get_cache_stats,
             cache_manager::clear_music_cache,
