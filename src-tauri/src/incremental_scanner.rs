@@ -249,6 +249,15 @@ impl IncrementalScanner {
             lyric: String::new(),
             fingerprint,
             cached_at: current_timestamp(),
+            // 新增字段
+            primary_source: None,
+            alternative_sources: Vec::new(),
+            duration: metadata.duration,
+            genre: metadata.genre.clone(),
+            year: metadata.year,
+            comment: metadata.comment.clone(),
+            composer: metadata.composer.clone(),
+            lyricist: metadata.lyricist.clone(),
         })
     }
     

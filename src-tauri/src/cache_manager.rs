@@ -57,6 +57,85 @@ impl FileFingerprint {
     }
 }
 
+/// 音轨来源信息（用于去重合并）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackSource {
+    pub id: u32,
+    pub path: PathBuf,
+    pub file_size: u64,
+    pub modified_time: u64,
+    pub bitrate: Option<u32>,
+    pub format: String,
+    pub sample_rate: Option<u32>,
+    pub duration: Option<f64>,
+    pub quality_score: u32,
+}
+
+impl TrackSource {
+    /// 计算音质评分
+    pub fn calculate_quality_score(&self) -> u32 {
+        let mut score = 0u32;
+        
+        // 比特率分数 (最高320分)
+        if let Some(bitrate) = self.bitrate {
+            score += bitrate.min(320);
+        }
+        
+        // 格式分数 (无损格式优先)
+        score += match self.format.to_lowercase().as_str() {
+            "flac" => 500,
+            "wav" | "aiff" => 400,
+            "aac" | "m4a" => 300,
+            "mp3" => 200,
+            "ogg" => 250,
+            "wma" => 150,
+            _ => 100,
+        };
+        
+        // 采样率分数 (最高480分，48kHz)
+        if let Some(sample_rate) = self.sample_rate {
+            score += (sample_rate / 100).min(480);
+        }
+        
+        // 时长分数 (完整曲目优先，最高100分)
+        if let Some(duration) = self.duration {
+            if duration > 180.0 { // 超过3分钟
+                score += 100;
+            } else if duration > 60.0 { // 超过1分钟
+                score += 50;
+            }
+        }
+        
+        score
+    }
+    
+    /// 从元数据创建TrackSource
+    pub fn from_metadata(
+        id: u32,
+        path: PathBuf,
+        file_size: u64,
+        modified_time: u64,
+        bitrate: Option<u32>,
+        format: &str,
+        sample_rate: Option<u32>,
+        duration: Option<f64>,
+    ) -> Self {
+        let mut source = Self {
+            id,
+            path,
+            file_size,
+            modified_time,
+            bitrate,
+            format: format.to_string(),
+            sample_rate,
+            duration,
+            quality_score: 0,
+        };
+        source.quality_score = source.calculate_quality_score();
+        source
+    }
+}
+
 /// 歌曲元数据缓存
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedSongMetadata {
@@ -68,6 +147,15 @@ pub struct CachedSongMetadata {
     pub lyric: String,
     pub fingerprint: FileFingerprint,
     pub cached_at: u64,
+    // 新增字段：支持多来源
+    pub primary_source: Option<TrackSource>,
+    pub alternative_sources: Vec<TrackSource>,
+    pub duration: Option<f64>,
+    pub genre: Option<String>,
+    pub year: Option<u32>,
+    pub comment: Option<String>,
+    pub composer: Option<String>,
+    pub lyricist: Option<String>,
 }
 
 /// 艺术家缓存

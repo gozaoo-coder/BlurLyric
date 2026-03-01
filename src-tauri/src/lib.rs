@@ -33,6 +33,10 @@ use incremental_scanner::{IncrementalScanner, ScanResult};
 mod performance_monitor;
 use performance_monitor::{PerformanceMonitor, MetricType};
 
+// 引入音乐去重模块
+mod music_deduplicator;
+use music_deduplicator::{MusicDeduplicator, MergedTrack, deduplicate_tracks};
+
 lazy_static! {
     // ID 计数器
     static ref SONG_ID_COUNTER: Mutex<u32> = Mutex::new(0);
@@ -105,6 +109,22 @@ struct Song {
     sample_rate: Option<u32>,        // 采样率（Hz）
     channels: Option<u8>,            // 声道数
     other_tags: Option<std::collections::HashMap<String, String>>, // 其他标签
+    // 去重合并相关字段
+    sources: Vec<TrackSourceInfo>,   // 所有来源（包括主来源和替代来源）
+    primary_source_index: usize,     // 主来源在sources中的索引
+}
+
+/// 音轨来源信息（简化版，用于前端传输）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct TrackSourceInfo {
+    id: u32,
+    path: String,
+    format: String,
+    bitrate: Option<u32>,
+    sample_rate: Option<u32>,
+    duration: Option<f64>,
+    quality_score: u32,
+    file_size: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -375,9 +395,35 @@ fn parse_music_file(file: PathBuf) -> Result<Song, String> {
 
             let album = get_or_create_album(album_name);
             
+            // 获取文件格式
+            let format = file.extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            
+            // 计算音质评分
+            let quality_score = calculate_quality_score(
+                metadata.bitrate,
+                &format,
+                metadata.sample_rate,
+                metadata.duration,
+            );
+            
+            // 创建来源信息
+            let source_info = TrackSourceInfo {
+                id: next_id(&SONG_ID_COUNTER),
+                path: file.display().to_string(),
+                format: format.clone(),
+                bitrate: metadata.bitrate,
+                sample_rate: metadata.sample_rate,
+                duration: metadata.duration,
+                quality_score,
+                file_size: std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0),
+            };
+            
             Song {
                 name: title,
-                id: next_id(&SONG_ID_COUNTER),
+                id: source_info.id,
                 ar: artists,
                 lyric: metadata.lyrics.map(|l| l.content).unwrap_or_default(),
                 al: album,
@@ -394,14 +440,33 @@ fn parse_music_file(file: PathBuf) -> Result<Song, String> {
                 sample_rate: metadata.sample_rate,
                 channels: metadata.channels,
                 other_tags: metadata.other_tags,
+                // 去重合并相关字段
+                sources: vec![source_info],
+                primary_source_index: 0,
             }
         }
         Err(_) => {
             // 如果读取标签失败，则使用默认值
             let album = get_or_create_album("Unknown Album".to_string());
+            let format = file.extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            
+            let source_info = TrackSourceInfo {
+                id: next_id(&SONG_ID_COUNTER),
+                path: file.display().to_string(),
+                format,
+                bitrate: None,
+                sample_rate: None,
+                duration: None,
+                quality_score: 0,
+                file_size: std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0),
+            };
+            
             Song {
                 name: file_name,
-                id: next_id(&SONG_ID_COUNTER),
+                id: source_info.id,
                 ar: vec![get_or_create_artist("Unknown Artist".to_string())],
                 lyric: String::new(),
                 al: album,
@@ -417,6 +482,8 @@ fn parse_music_file(file: PathBuf) -> Result<Song, String> {
                 sample_rate: None,
                 channels: None,
                 other_tags: None,
+                sources: vec![source_info],
+                primary_source_index: 0,
             }
         }
     };
@@ -531,6 +598,21 @@ impl Song {
             "sampleRate": self.sample_rate,
             "channels": self.channels,
             "otherTags": self.other_tags,
+            // 去重合并相关字段
+            "sources": self.sources.iter().map(|s| {
+                json!({
+                    "id": s.id,
+                    "path": s.path,
+                    "format": s.format,
+                    "bitrate": s.bitrate,
+                    "sampleRate": s.sample_rate,
+                    "duration": s.duration,
+                    "qualityScore": s.quality_score,
+                    "fileSize": s.file_size,
+                })
+            }).collect::<Vec<serde_json_value>>(),
+            "primarySourceIndex": self.primary_source_index,
+            "sourceCount": self.sources.len(),
         })
     }
 }
@@ -551,6 +633,48 @@ fn next_album_id() -> u32 {
     let mut id = ALBUM_ID_COUNTER.lock().unwrap();
     *id += 1;
     *id
+}
+
+/// 计算音质评分
+fn calculate_quality_score(
+    bitrate: Option<u32>,
+    format: &str,
+    sample_rate: Option<u32>,
+    duration: Option<f64>,
+) -> u32 {
+    let mut score = 0u32;
+    
+    // 比特率分数 (最高320分)
+    if let Some(bitrate) = bitrate {
+        score += bitrate.min(320);
+    }
+    
+    // 格式分数 (无损格式优先)
+    score += match format.to_lowercase().as_str() {
+        "flac" => 500,
+        "wav" | "aiff" => 400,
+        "aac" | "m4a" => 300,
+        "mp3" => 200,
+        "ogg" => 250,
+        "wma" => 150,
+        _ => 100,
+    };
+    
+    // 采样率分数 (最高480分，48kHz)
+    if let Some(sample_rate) = sample_rate {
+        score += (sample_rate / 100).min(480);
+    }
+    
+    // 时长分数 (完整曲目优先，最高100分)
+    if let Some(duration) = duration {
+        if duration > 180.0 { // 超过3分钟
+            score += 100;
+        } else if duration > 60.0 { // 超过1分钟
+            score += 50;
+        }
+    }
+    
+    score
 }
 
 // 独立的方法，用于添加用户音乐文件夹
@@ -705,6 +829,54 @@ fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCache) {
                     pic_url: String::new(),
                 });
             
+            // 从缓存的来源信息构建sources
+            let mut sources = Vec::new();
+            
+            // 主来源
+            if let Some(ref primary) = cached_song.primary_source {
+                sources.push(TrackSourceInfo {
+                    id: primary.id,
+                    path: primary.path.display().to_string(),
+                    format: primary.format.clone(),
+                    bitrate: primary.bitrate,
+                    sample_rate: primary.sample_rate,
+                    duration: primary.duration,
+                    quality_score: primary.quality_score,
+                    file_size: primary.file_size,
+                });
+            } else {
+                // 如果没有主来源，从fingerprint构建
+                let format = cached_song.fingerprint.path.extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                
+                sources.push(TrackSourceInfo {
+                    id: cached_song.id,
+                    path: cached_song.fingerprint.path.display().to_string(),
+                    format,
+                    bitrate: None,
+                    sample_rate: None,
+                    duration: cached_song.duration,
+                    quality_score: 0,
+                    file_size: cached_song.fingerprint.size,
+                });
+            }
+            
+            // 替代来源
+            for source in &cached_song.alternative_sources {
+                sources.push(TrackSourceInfo {
+                    id: source.id,
+                    path: source.path.display().to_string(),
+                    format: source.format.clone(),
+                    bitrate: source.bitrate,
+                    sample_rate: source.sample_rate,
+                    duration: source.duration,
+                    quality_score: source.quality_score,
+                    file_size: source.file_size,
+                });
+            }
+            
             let song = Song {
                 name: cached_song.name.clone(),
                 id: cached_song.id,
@@ -713,17 +885,20 @@ fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCache) {
                 al: album,
                 src: cached_song.fingerprint.path.clone(),
                 track_number: cached_song.track_number,
-                // 新增字段（从缓存中恢复时暂时设为None，后续可从扩展缓存中读取）
-                duration: None,
-                genre: None,
-                year: None,
-                comment: None,
-                composer: None,
-                lyricist: None,
-                bitrate: None,
-                sample_rate: None,
-                channels: None,
+                // 新增字段
+                duration: cached_song.duration,
+                genre: cached_song.genre.clone(),
+                year: cached_song.year,
+                comment: cached_song.comment.clone(),
+                composer: cached_song.composer.clone(),
+                lyricist: cached_song.lyricist.clone(),
+                bitrate: sources.first().and_then(|s| s.bitrate),
+                sample_rate: sources.first().and_then(|s| s.sample_rate),
+                channels: None, // 缓存中暂时没有声道数
                 other_tags: None,
+                // 去重合并相关字段
+                sources,
+                primary_source_index: 0,
             };
             
             // 更新映射
@@ -817,6 +992,15 @@ fn build_persistent_cache_from_memory() -> MusicLibraryCache {
                     lyric: song.lyric.clone(),
                     fingerprint,
                     cached_at: now,
+                    // 新增字段
+                    primary_source: None,
+                    alternative_sources: Vec::new(),
+                    duration: song.duration,
+                    genre: song.genre.clone(),
+                    year: song.year,
+                    comment: song.comment.clone(),
+                    composer: song.composer.clone(),
+                    lyricist: song.lyricist.clone(),
                 });
             }
         }

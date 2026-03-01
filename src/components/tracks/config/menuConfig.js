@@ -246,6 +246,51 @@ export function createMusicTableMenuItems(params) {
     }
   ];
 
+  // 查看来源菜单（当有多来源时显示）
+  const sourcesMenuItems = [];
+  const sources = line.sources || [];
+  const primaryIndex = line.primarySourceIndex ?? line.primary_source_index ?? 0;
+  
+  if (sources.length > 1) {
+    sources.forEach((source, index) => {
+      const isPrimary = index === primaryIndex;
+      const format = source.format?.toUpperCase() ?? '未知';
+      const bitrate = source.bitrate ? `${source.bitrate}kbps` : '';
+      const sampleRate = source.sampleRate ? `${(source.sampleRate / 1000).toFixed(1)}kHz` : '';
+      const qualityScore = source.qualityScore ?? source.quality_score ?? 0;
+      
+      // 格式化文件路径（显示文件名和目录）
+      const path = source.path || '';
+      const fileName = path.split(/[\\/]/).pop() || '未知文件';
+      const dirName = path.split(/[\\/]/).slice(-2, -1)[0] || '';
+      
+      let displayName = `${isPrimary ? '★ ' : ''}${fileName}`;
+      if (dirName) {
+        displayName += ` (${dirName})`;
+      }
+      
+      // 音质信息
+      const qualityInfo = [];
+      if (format) qualityInfo.push(format);
+      if (bitrate) qualityInfo.push(bitrate);
+      if (sampleRate) qualityInfo.push(sampleRate);
+      
+      sourcesMenuItems.push({
+        iconClass: isPrimary ? ['bi', 'bi-star-fill'] : ['bi', 'bi-music-note'],
+        name: displayName,
+        description: qualityInfo.join(' | ') + ` | 评分: ${qualityScore}`,
+        handleClick: () => {
+          // 切换到该来源播放
+          regMessage?.({
+            type: 'Message',
+            content: `已切换到来源 ${index + 1}/${sources.length}: ${fileName}`
+          });
+          // 这里可以触发切换来源的逻辑
+        }
+      });
+    });
+  }
+
   // 主菜单
   return [
     {
@@ -279,6 +324,13 @@ export function createMusicTableMenuItems(params) {
       type: 'hoverMenu',
       menuItems: detailMenuItems
     },
+    // 当有多来源时显示"查看来源"菜单
+    ...(sourcesMenuItems.length > 0 ? [{
+      iconClass: ['bi', 'bi-collection'],
+      name: `查看来源 (${sources.length}个)`,
+      type: 'hoverMenu',
+      menuItems: sourcesMenuItems
+    }] : []),
     {
       iconClass: ['bi', 'bi-file-earmark-music'],
       name: '转存音乐文件',

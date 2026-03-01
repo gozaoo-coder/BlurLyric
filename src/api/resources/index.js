@@ -331,6 +331,35 @@ export class Track {
         return this.#data.otherTags ?? this.#data.other_tags ?? {};
     }
 
+    // 去重合并相关字段
+    get sources() {
+        return this.#data.sources ?? [];
+    }
+
+    get primarySourceIndex() {
+        return this.#data.primarySourceIndex ?? this.#data.primary_source_index ?? 0;
+    }
+
+    get sourceCount() {
+        return this.#data.sourceCount ?? this.sources.length ?? 1;
+    }
+
+    get primarySource() {
+        const sources = this.sources;
+        const index = this.primarySourceIndex;
+        return sources[index] ?? sources[0] ?? null;
+    }
+
+    get alternativeSources() {
+        const sources = this.sources;
+        const primaryIndex = this.primarySourceIndex;
+        return sources.filter((_, index) => index !== primaryIndex);
+    }
+
+    hasMultipleSources() {
+        return this.sourceCount > 1;
+    }
+
     async getAlbumCover(apiAdapter, resolution = 368) {
         if (!this.#albumCover) {
             const albumId = this.#data.al?.id ?? -1;
