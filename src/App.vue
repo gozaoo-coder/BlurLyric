@@ -850,7 +850,7 @@ export default {
             // 启动自动更新监听
             const createUpdateListener = (type) => {
                 return (newData) => {
-                    console.log(`Cache updated for ${type}:`, newData);
+                    console.log(`Cache updated for ${type},length:`, newData.length);
                     this.source.local[type].data = newData;
                     this.source.local[type].lastUpdateTimestamp = Date.now();
                 };

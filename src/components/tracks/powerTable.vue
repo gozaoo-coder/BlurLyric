@@ -145,7 +145,6 @@
 		watch: {
 			scrollState: {
 				handler(newValue, oldValue) {
-					console.log(newValue);
 				}
 			},
 			tableData: {

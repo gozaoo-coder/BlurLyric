@@ -1,235 +1,216 @@
 <template>
-    <div class="relativeBox">
-        <!-- 浮动盒子的容器，根据主题和可见性动态应用样式 -->
-        <div ref="floatingBox"
-            :class="['floating-box', `theme-${theme}`, { 'visible': isVisible, 'not-visible': !isVisible }]"
-            :style="floatingBoxStyle">
-            <!-- 插槽，用于插入悬浮内容 -->
-            <slot name="suspendContent"></slot>
-        </div>
-                <!-- 占位符容器，用于鼠标悬停时触发悬浮盒子的显示 -->
-                <div ref="placeholder" @mouseenter="handleMouseEnter" @mouseleave="handleMouseLeave">
-            <!-- 插槽，用于插入占位符内容 -->
-            <slot name="placeholder"></slot>
-        </div>
+    <div ref="triggerRef" class="relativeBox">
+        <slot name="placeholder"></slot>
     </div>
-
+    <div ref="contentRef" style="display: none;">
+        <slot name="suspendContent"></slot>
+    </div>
 </template>
 
 <script>
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import tippy from 'tippy.js';
+import 'tippy.js/dist/tippy.css';
+import { ref, computed, onMounted, watch, nextTick, getCurrentInstance } from 'vue';
+import 'tippy.js/animations/scale-subtle.css';
 
 export default {
-    name: 'FloatingBox', // 组件名称
+    name: 'FloatingBox',
     props: {
-        // 悬浮盒子的方向，默认为'right'
-        direction: {
-            type: String,
-            default: 'right',
-        },
-        // 是否仅在鼠标悬停时显示悬浮盒子，默认为false
         hoverOnly: {
             type: Boolean,
             default: false,
         },
-        // 悬浮盒子的可见性，默认为true
         visibility: {
             type: Boolean,
             default: true,
         },
-        // 悬浮盒子的原点坐标，默认为[0, 0]
-        originPoint: {
-            type: Array,
-            default: () => [0, 0],
-        },
-        // 悬浮盒子的主题，默认为'black'
         theme: {
             type: String,
             default: 'black',
         },
-        // 悬浮盒子的最大宽度，默认为'fit-content'
         maxWidth: {
             type: String,
             default: 'fit-content',
         },
+        direction: {
+            type: String,
+            default: 'right',
+        },
     },
     setup(props) {
-        const floatingBox = ref(null); // 引用悬浮盒子的DOM元素
-        const placeholder = ref(null); // 引用占位符的DOM元素
-        const isVisible = ref(props.visibility && !props.hoverOnly); // 控制悬浮盒子的可见性
-        let timeoutId = null; // 用于延时显示悬浮盒子的计时器
+        const triggerRef = ref(null);
+        const contentRef = ref(null);
+        const tippyInstance = ref(null);
 
-        // 计算悬浮盒子的样式
-        const floatingBoxStyle = computed(() => {
-            const style = {
-                maxWidth: props.maxWidth,
-                // width: '',
-                visibility: isVisible.value ? 'visible' : 'hidden',
+        const getPlacement = () => {
+            const placementMap = {
+                'top': 'top',
+                'bottom': 'bottom',
+                'left': 'left',
+                'right': 'right',
             };
-            // 根据方向和原点坐标计算悬浮盒子的位置
-            const [originX, originY] = props.originPoint;
-            const placeholderRect = placeholder.value?.getBoundingClientRect();
-            const floatingBoxRect = floatingBox.value?.getBoundingClientRect();
+            return placementMap[props.direction] || 'right';
+        };
 
-            if (placeholderRect && floatingBoxRect) {
-                const directions = [props.direction, 'top', 'right', 'bottom', 'left', 'center'];
-                const dirToVal = {
-                    top: 'height',
-                    bottom: 'height',
-                    left: 'width',
-                    right: 'width'
-                };
-                const reverse = {
-                    top: 'bottom',
-                    bottom: 'top',
-                    left: 'right',
-                    right: 'left'
-                };
-                let positionFound = false;
-                for (let dir of directions) {
-                    if (positionFound) break;
+        const createTippy = () => {
+            if (!triggerRef.value || !contentRef.value) return;
 
-                    const isHorizontal = dir === 'left' || dir === 'right';
-                    const isVertical = dir === 'top' || dir === 'bottom';
-                    // console.log(floatingBoxRect);
-                    if (dir === 'center') {
-                        style.top = `${originY}px`;
-                        style.left = `${originX}px`;
-                    } else if (isHorizontal == true) {
-                        style[reverse[dir]] = `${(placeholderRect[dirToVal[dir]] + 5) * (( dir === 'left')?-1:1)}px`;
-                        style.top = `${ placeholderRect.height / 2 - floatingBoxRect.height / 2}px`;
-                    } else if (isVertical == true) {
-                        // debugger
-                        style.top = `${(placeholderRect[dirToVal[dir]] + 5) * (( dir === 'top')?-1:1)}px`;
-                        style.left = `${placeholderRect.width / 2 - floatingBoxRect.width / 2}px`;
-                    }
-
-                    // 检查悬浮盒子是否在视口内，并调整位置
-                    // const boxLeft = parseFloat(style.left);
-                    // const boxTop = parseFloat(style.top);
-                    // const boxRight = boxLeft + floatingBoxRect.width;
-                    // const boxBottom = boxTop + floatingBoxRect.height;
-
-                    // if (boxLeft >= 0 && boxRight <= window.innerWidth && boxTop >= 0 && boxBottom <= window.innerHeight) {
-                    //     positionFound = true;
-                    // } else {
-                    //     // 如果不在视口内，重置样式
-                    //     style.top = '';
-                    //     style.left = '';
-                    //     style[dir] = '';
-                    // }
-                    positionFound = true;
-
+            tippyInstance.value = tippy(triggerRef.value, {
+                content: contentRef.value,
+                trigger: props.hoverOnly ? 'mouseenter' : 'manual',
+                placement: getPlacement(),
+                animation: 'scale-subtle',
+                interactive: true,
+                appendTo: () => document.body,
+                showOnCreate: !props.hoverOnly && props.visibility,
+                offset: [0, 10],
+                popperOptions: {
+                    modifiers: [
+                        {
+                            name: 'computeStyles',
+                            options: {
+                                adaptive: false,
+                            }
+                        }
+                    ]
                 }
-            }
+            });
 
-            return style;
+            // 显示内容后，移除 display: none
+            if (contentRef.value) {
+                contentRef.value.style.display = '';
+            }
+        };
+
+        const updateVisibility = () => {
+            if (!tippyInstance.value) return;
+
+            if (props.visibility) {
+                tippyInstance.value.show();
+            } else {
+                tippyInstance.value.hide();
+            }
+        };
+
+        const updateTheme = () => {
+            if (!tippyInstance.value) return;
+
+            const popper = tippyInstance.value.popper;
+            const tooltip = popper.querySelector('.tippy-box');
+            if (tooltip) {
+                tooltip.className = `tippy-box theme-${props.theme}`;
+            }
+        };
+
+        watch(() => props.visibility, () => {
+            if (!props.hoverOnly) {
+                updateVisibility();
+            }
         });
 
-        // 检查并调整悬浮盒子的位置
-        const checkAndAdjustPosition = () => {
-            const floatingBoxRect = floatingBox.value?.getBoundingClientRect();
-            if (floatingBoxRect) {
-                const boxLeft = parseFloat(floatingBoxStyle.value.left);
-                const boxTop = parseFloat(floatingBoxStyle.value.top);
-                const boxRight = boxLeft + floatingBoxRect.width;
-                const boxBottom = boxTop + floatingBoxRect.height;
+        watch(() => props.theme, () => {
+            updateTheme();
+        });
 
-                if (boxRight > window.innerWidth) {
-                    floatingBoxStyle.value.left = `${window.innerWidth - floatingBoxRect.width}px`;
-                }
-                if (boxBottom > window.innerHeight) {
-                    floatingBoxStyle.value.top = `${window.innerHeight - floatingBoxRect.height}px`;
-                }
-                if (boxLeft < 0) {
-                    floatingBoxStyle.value.left = '0px';
-                }
-                if (boxTop < 0) {
-                    floatingBoxStyle.value.top = '0px';
-                }
+        watch(() => props.hoverOnly, () => {
+            if (tippyInstance.value) {
+                tippyInstance.value.setProps({
+                    trigger: props.hoverOnly ? 'mouseenter' : 'manual'
+                });
             }
-        };
+        });
 
-        // 鼠标进入占位符时的处理函数
-        const handleMouseEnter = () => {
-            if (props.hoverOnly && props.visibility) {
-                timeoutId = setTimeout(() => {
-                    isVisible.value = true;
-                }, 300);
+        watch(() => props.direction, () => {
+            if (tippyInstance.value) {
+                tippyInstance.value.setProps({
+                    placement: getPlacement()
+                });
             }
-        };
-
-        // 鼠标离开占位符时的处理函数
-        const handleMouseLeave = () => {
-            if (props.hoverOnly) {
-                clearTimeout(timeoutId);
-                isVisible.value = false;
-            }
-        };
+        });
 
         onMounted(() => {
-            checkAndAdjustPosition();
-            // 监听方向、原点坐标和可见性的变化，并调整位置和可见性
-            watch(() => [props.direction, props.originPoint, props.visibility], () => {
-                if (!props.hoverOnly || (props.hoverOnly && props.visibility)) {
-                    checkAndAdjustPosition();
-                }
-                isVisible.value = props.visibility && !props.hoverOnly;
+            nextTick(() => {
+                createTippy();
             });
         });
 
         return {
-            floatingBox,
-            placeholder,
-            isVisible,
-            floatingBoxStyle,
-            handleMouseEnter,
-            handleMouseLeave,
+            triggerRef,
+            contentRef,
         };
     },
+    beforeUnmount() {
+        if (tippyInstance.value) {
+            tippyInstance.value.destroy();
+            tippyInstance.value = null;
+        }
+    }
 };
 </script>
 
 <style scoped>
-.relativeBox{
+.relativeBox {
     position: relative;
     width: fit-content;
     height: fit-content;
-}
-.floating-box {
-    position: absolute;
-    min-width: max-content !important;
-    /* 悬浮盒子的默认样式 */
-    opacity: 0;
-    font-size: 0.8em;
-    padding: .4em .7em;
-    border-radius: 0.64em;
-    transition: left 0s, top 0s,right 0s,bottom 0s, 0.3s;
-    box-shadow: var(--Shadow-value-normal);
+    display: inline-block;
 }
 
-.theme-light {
-    /* 浅色主题样式 */
+/* 直接在 tippy-box 上应用原有样式 */
+:deep(.tippy-box) {
+    min-width: max-content !important;
+    font-size: 0.8em !important;
+    padding: .4em .7em;
+    border-radius: 0.64em;
+    box-shadow: var(--Shadow-value-normal);
+    max-width: fit-content;
+    border: none;
+}
+
+/* 主题样式 - 直接应用到 tippy-box */
+:deep(.tippy-box.theme-light) {
     background-color: #fff;
     color: #333;
 }
 
-.theme-black {
-    /* 黑色主题样式 */
+:deep(.tippy-box.theme-black) {
     background-color: #333;
     color: #fff;
 }
 
-.visible {
-    visibility: visible;
-    opacity: 1;
-
+/* 内容区域不需要额外样式 */
+:deep(.tippy-content) {
+    padding: 0;
 }
 
-.not-visible {
-    visibility: hidden;
+/* 隐藏默认箭头 */
+:deep(.tippy-arrow) {
+    display: none !important;
+}
+
+/* scale-subtle 动画样式 */
+:deep(.tippy-box[data-animation="scale-subtle"]) {
+    transform-origin: center center;
+}
+
+:deep(.tippy-box[data-animation="scale-subtle"][data-placement^="right"]) {
+    transform-origin: left center;
+}
+
+:deep(.tippy-box[data-animation="scale-subtle"][data-placement^="left"]) {
+    transform-origin: right center;
+}
+
+:deep(.tippy-box[data-animation="scale-subtle"][data-placement^="top"]) {
+    transform-origin: center bottom;
+}
+
+:deep(.tippy-box[data-animation="scale-subtle"][data-placement^="bottom"]) {
+    transform-origin: center top;
+}
+
+:deep(.tippy-box[data-animation="scale-subtle"][data-state="hidden"]) {
+    transform: scale(0.8);
     opacity: 0;
-
 }
-
 </style>
