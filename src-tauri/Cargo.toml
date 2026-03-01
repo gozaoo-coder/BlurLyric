@@ -28,6 +28,7 @@ blake3 = "1.5"
 wgpu = "22.0"
 bytemuck = { version = "1.16", features = ["derive"] }
 pollster = "0.3"
+symphonia = { version = "0.5", features = ["all"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-shell = "2.0.0"

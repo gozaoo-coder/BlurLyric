@@ -33,11 +33,6 @@ const router =[
     {
         name: 'localAlbum',
         path: '/localAlbum/',component:()=>import('./routers/localAlbum.vue')
-    },
-    {
-        name: 'resourceDemo',
-        path: '/tests/resourceDemo',
-        component: ()=>import('./routers/tests/resourceDemo.vue')
     }
 ]
 

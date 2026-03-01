@@ -94,6 +94,17 @@ struct Song {
     al: Album,
     src: PathBuf,
     track_number: u16,
+    // 新增字段
+    duration: Option<f64>,           // 音频时长（秒）
+    genre: Option<String>,           // 流派
+    year: Option<u32>,               // 发行年份
+    comment: Option<String>,         // 评论
+    composer: Option<String>,        // 作曲家
+    lyricist: Option<String>,        // 作词家
+    bitrate: Option<u32>,            // 比特率（kbps）
+    sample_rate: Option<u32>,        // 采样率（Hz）
+    channels: Option<u8>,            // 声道数
+    other_tags: Option<std::collections::HashMap<String, String>>, // 其他标签
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -332,7 +343,7 @@ fn parse_music_file(file: PathBuf) -> Result<Song, String> {
         .to_string();
 
     // 根据元数据读取结果处理
-    let song_data = match metadata_result {
+    let song = match metadata_result {
         Ok(metadata) => {
             // 如果成功读取标签，则使用标签中的信息
             let track_number = metadata.track_number.unwrap_or(0);
@@ -363,28 +374,53 @@ fn parse_music_file(file: PathBuf) -> Result<Song, String> {
             };
 
             let album = get_or_create_album(album_name);
-            (title, artists, album, track_number)
+            
+            Song {
+                name: title,
+                id: next_id(&SONG_ID_COUNTER),
+                ar: artists,
+                lyric: metadata.lyrics.map(|l| l.content).unwrap_or_default(),
+                al: album,
+                src: file,
+                track_number,
+                // 新增字段
+                duration: metadata.duration,
+                genre: metadata.genre,
+                year: metadata.year,
+                comment: metadata.comment,
+                composer: metadata.composer,
+                lyricist: metadata.lyricist,
+                bitrate: metadata.bitrate,
+                sample_rate: metadata.sample_rate,
+                channels: metadata.channels,
+                other_tags: metadata.other_tags,
+            }
         }
         Err(_) => {
             // 如果读取标签失败，则使用默认值
-            (
-                file_name.clone(),
-                vec![get_or_create_artist("Unknown Artist".to_string())],
-                get_or_create_album("Unknown Album".to_string()),
-                0,
-            )
+            let album = get_or_create_album("Unknown Album".to_string());
+            Song {
+                name: file_name,
+                id: next_id(&SONG_ID_COUNTER),
+                ar: vec![get_or_create_artist("Unknown Artist".to_string())],
+                lyric: String::new(),
+                al: album,
+                src: file,
+                track_number: 0,
+                duration: None,
+                genre: None,
+                year: None,
+                comment: None,
+                composer: None,
+                lyricist: None,
+                bitrate: None,
+                sample_rate: None,
+                channels: None,
+                other_tags: None,
+            }
         }
     };
-
-    let song = Song {
-        name: song_data.0,
-        id: next_id(&SONG_ID_COUNTER),
-        ar: song_data.1,
-        lyric: String::new(),
-        al: song_data.2,
-        src: file,
-        track_number: song_data.3,
-    };
+    
     {
         let mut artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap();
         let mut album_songs_map = ALBUM_SONGS_MAP.lock().unwrap();
@@ -483,6 +519,18 @@ impl Song {
                 "picUrl": self.al.pic_url,
             },
             "src": self.src.display().to_string(),
+            "trackNumber": self.track_number,
+            // 新增字段
+            "duration": self.duration,
+            "genre": self.genre,
+            "year": self.year,
+            "comment": self.comment,
+            "composer": self.composer,
+            "lyricist": self.lyricist,
+            "bitrate": self.bitrate,
+            "sampleRate": self.sample_rate,
+            "channels": self.channels,
+            "otherTags": self.other_tags,
         })
     }
 }
@@ -665,6 +713,17 @@ fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCache) {
                 al: album,
                 src: cached_song.fingerprint.path.clone(),
                 track_number: cached_song.track_number,
+                // 新增字段（从缓存中恢复时暂时设为None，后续可从扩展缓存中读取）
+                duration: None,
+                genre: None,
+                year: None,
+                comment: None,
+                composer: None,
+                lyricist: None,
+                bitrate: None,
+                sample_rate: None,
+                channels: None,
+                other_tags: None,
             };
             
             // 更新映射

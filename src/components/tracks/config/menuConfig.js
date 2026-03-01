@@ -200,6 +200,49 @@ export function createMusicTableMenuItems(params) {
           });
         }
       }
+    },
+    { type: 'hr' },
+    {
+      iconClass: ['bi', 'bi-info-circle'],
+      name: '音乐信息',
+      handleClick: () => {
+        // 显示音乐详细信息
+        const info = [];
+        if (line.duration) {
+          const minutes = Math.floor(line.duration / 60);
+          const seconds = Math.floor(line.duration % 60);
+          info.push(`时长: ${minutes}:${seconds.toString().padStart(2, '0')}`);
+        }
+        if (line.genre) info.push(`流派: ${line.genre}`);
+        if (line.year) info.push(`年份: ${line.year}`);
+        if (line.composer) info.push(`作曲: ${line.composer}`);
+        if (line.lyricist) info.push(`作词: ${line.lyricist}`);
+        if (line.bitrate) info.push(`比特率: ${line.bitrate} kbps`);
+        if (line.sampleRate) info.push(`采样率: ${line.sampleRate} Hz`);
+        if (line.channels) info.push(`声道: ${line.channels}`);
+        
+        // 显示其他标签
+        const otherTags = line.otherTags || line.other_tags;
+        if (otherTags && Object.keys(otherTags).length > 0) {
+          info.push('--- 其他标签 ---');
+          for (const [key, value] of Object.entries(otherTags)) {
+            info.push(`${key}: ${value}`);
+          }
+        }
+        
+        if (info.length > 0) {
+          regMessage?.({
+            type: 'Message',
+            content: info.join('\n'),
+            duration: 5000
+          });
+        } else {
+          regMessage?.({
+            type: 'Warning',
+            content: '暂无详细信息'
+          });
+        }
+      }
     }
   ];
 
@@ -334,6 +377,24 @@ export const tableColumnConfig = [
     name: '专辑',
     spacialStyle: {
       color: 'var(--fontColor-content-unimportant)',
+    }
+  },
+  {
+    type: 'content',
+    path: function () {
+      const duration = this.line.duration;
+      if (!duration || duration <= 0) return '--:--';
+      const minutes = Math.floor(duration / 60);
+      const seconds = Math.floor(duration % 60);
+      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    },
+    name: '时长',
+    sizing: 'basis',
+    sizingValue: '4em',
+    spacialStyle: {
+      color: 'var(--fontColor-content-unimportant)',
+      textAlign: 'right',
+      justifyContent: 'flex-end',
     }
   }
 ];

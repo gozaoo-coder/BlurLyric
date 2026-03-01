@@ -277,6 +277,9 @@ pub struct MusicMetadata {
     /// 声道数
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channels: Option<u8>,
+    /// 其他未识别的标签
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub other_tags: Option<std::collections::HashMap<String, String>>,
 }
 
 impl MusicMetadata {
@@ -305,6 +308,7 @@ impl MusicMetadata {
             bitrate: None,
             sample_rate: None,
             channels: None,
+            other_tags: None,
         }
     }
 

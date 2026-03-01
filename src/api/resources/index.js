@@ -282,6 +282,55 @@ export class Track {
         return this.#data.al ? Album.fromRaw(this.#data.al) : null;
     }
 
+    // 新增字段访问器
+    get duration() {
+        return this.#data.duration ?? null;
+    }
+
+    get durationFormatted() {
+        const duration = this.#data.duration;
+        if (!duration || duration <= 0) return '--:--';
+        const minutes = Math.floor(duration / 60);
+        const seconds = Math.floor(duration % 60);
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    get genre() {
+        return this.#data.genre ?? null;
+    }
+
+    get year() {
+        return this.#data.year ?? null;
+    }
+
+    get comment() {
+        return this.#data.comment ?? null;
+    }
+
+    get composer() {
+        return this.#data.composer ?? null;
+    }
+
+    get lyricist() {
+        return this.#data.lyricist ?? null;
+    }
+
+    get bitrate() {
+        return this.#data.bitrate ?? null;
+    }
+
+    get sampleRate() {
+        return this.#data.sampleRate ?? this.#data.sample_rate ?? null;
+    }
+
+    get channels() {
+        return this.#data.channels ?? null;
+    }
+
+    get otherTags() {
+        return this.#data.otherTags ?? this.#data.other_tags ?? {};
+    }
+
     async getAlbumCover(apiAdapter, resolution = 368) {
         if (!this.#albumCover) {
             const albumId = this.#data.al?.id ?? -1;
