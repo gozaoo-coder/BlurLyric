@@ -13,6 +13,26 @@ use tokio::fs as async_fs;
 mod music_tag;
 use music_tag::MetadataParser;
 
+// 引入图片处理器模块
+mod image_processor;
+use image_processor::IMAGE_PROCESSOR;
+
+// 引入GPU图片处理器模块
+mod gpu_image_processor;
+use gpu_image_processor::{init_gpu_processor, resize_with_gpu_fallback};
+
+// 引入缓存管理模块
+mod cache_manager;
+use cache_manager::{CacheManager, CachedSongMetadata, MusicLibraryCache};
+
+// 引入增量扫描模块
+mod incremental_scanner;
+use incremental_scanner::{IncrementalScanner, ScanResult};
+
+// 引入性能监控模块
+mod performance_monitor;
+use performance_monitor::{PerformanceMonitor, MetricType};
+
 lazy_static! {
     // ID 计数器
     static ref SONG_ID_COUNTER: Mutex<u32> = Mutex::new(0);
@@ -28,6 +48,11 @@ lazy_static! {
     static ref ARTIST_SONGS_MAP: Mutex<HashMap<u32, Vec<Song>>> = Mutex::new(HashMap::new());
     static ref ALBUM_SONGS_MAP: Mutex<HashMap<u32, Vec<Song>>> = Mutex::new(HashMap::new());
     static ref MUSIC_DIRS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+}
+
+// 导出音乐目录列表供其他模块使用
+pub fn get_music_dirs() -> Vec<PathBuf> {
+    MUSIC_DIRS.lock().unwrap().clone()
 }
 
 fn get_or_create_artist(name: String) -> Artist {
@@ -98,7 +123,7 @@ fn get_cache_image_path(cache_dir: &PathBuf, album_id: u32, max_resolution: u32)
     let binding = ALBUM_CACHE.lock().unwrap();
     let album = binding.values().find(|album| album.id == album_id).unwrap();
     path.push(sanitize_filename(format!(
-        "album_{}_{}.jpg",
+        "album_{}_{}.webp",
         album.name, max_resolution
     )));
     path
@@ -198,7 +223,7 @@ fn next_id(counter: &Mutex<u32>) -> u32 {
 fn is_music_file(entry: &DirEntry) -> bool {
     matches!(
         entry.path().extension().and_then(|ext| ext.to_str()),
-        Some("mp3" | "ogg" | "flac")
+        Some("mp3" | "ogg" | "flac" | "m4a" | "wav" | "aac")
     )
 }
 
@@ -494,25 +519,342 @@ fn get_users_music_dir() -> String {
     dirs::audio_dir().map(|dir| dir.to_str().unwrap().to_string()).unwrap_or_default()
 }
 
-// 程序启动时调用的方法
+// 程序启动时调用的方法 - 优化版本
 #[tauri::command]
 fn init_application() {
-    // 加载音乐缓存
-    println!("initing application.");
+    PerformanceMonitor::start_timer("init_application");
+    println!("Initializing application with optimized resource management...");
 
-    // 加载音乐目录
+    // 1. 初始化缓存管理器
+    if let Err(e) = CacheManager::init() {
+        eprintln!("Failed to initialize cache manager: {}", e);
+    }
+
+    // 2. 加载音乐目录
     if let Err(e) = load_music_dirs_from_disk() {
         eprintln!("Failed to load music directories from disk: {}", e);
     }
 
-    println!("checking config.");
-
-    println!("scanning music dirs.");
-    // 刷新音乐缓存
-    if let Err(e) = refresh_music_cache() {
-        eprintln!("Failed to refresh music cache: {}", e);
+    // 3. 尝试从缓存加载数据（快速启动）
+    let cache_loaded = load_from_persistent_cache();
+    
+    if !cache_loaded {
+        println!("No valid cache found, performing full scan...");
+        // 首次启动或缓存无效，执行全量扫描
+        if let Err(e) = refresh_music_cache() {
+            eprintln!("Failed to refresh music cache: {}", e);
+        }
+        // 保存到持久化缓存
+        save_to_persistent_cache();
+    } else {
+        println!("Loaded from cache successfully, performing incremental scan...");
+        // 后台执行增量扫描更新缓存
+        perform_background_incremental_scan();
     }
-    println!("init application finished.");
+
+    if let Some(duration) = PerformanceMonitor::end_timer("init_application") {
+        println!("Application initialization completed in {}ms", duration);
+        PerformanceMonitor::record_metric(
+            MetricType::ScanDuration,
+            duration,
+            "init_application".to_string(),
+        );
+    }
+}
+
+// 从持久化缓存加载数据
+fn load_from_persistent_cache() -> bool {
+    if let Some(manager_guard) = CacheManager::instance() {
+        if let Some(manager) = manager_guard.as_ref() {
+            match manager.load_from_disk() {
+                Ok(cache) => {
+                    if cache.songs.is_empty() {
+                        return false;
+                    }
+                    
+                    // 将缓存数据加载到内存
+                    rebuild_memory_cache_from_persistent(&cache);
+                    println!("Loaded {} songs from persistent cache", cache.songs.len());
+                    return true;
+                }
+                Err(e) => {
+                    eprintln!("Failed to load from persistent cache: {}", e);
+                }
+            }
+        }
+    }
+    false
+}
+
+// 从持久化缓存重建内存缓存
+fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCache) {
+    // 重置计数器
+    let max_song_id = cache.songs.iter().map(|s| s.id).max().unwrap_or(0);
+    let max_artist_id = cache.artists.iter().map(|a| a.id).max().unwrap_or(0);
+    let max_album_id = cache.albums.iter().map(|a| a.id).max().unwrap_or(0);
+    
+    *SONG_ID_COUNTER.lock().unwrap() = max_song_id;
+    *ARTIST_ID_COUNTER.lock().unwrap() = max_artist_id;
+    *ALBUM_ID_COUNTER.lock().unwrap() = max_album_id;
+    
+    // 重建艺术家缓存
+    {
+        let mut artist_cache = ARTIST_CACHE.lock().unwrap();
+        artist_cache.clear();
+        for artist in &cache.artists {
+            artist_cache.insert(artist.name.clone(), Artist {
+                id: artist.id,
+                name: artist.name.clone(),
+                alias: artist.alias.clone(),
+            });
+        }
+    }
+    
+    // 重建专辑缓存
+    {
+        let mut album_cache = ALBUM_CACHE.lock().unwrap();
+        album_cache.clear();
+        for album in &cache.albums {
+            album_cache.insert(album.name.clone(), Album {
+                id: album.id,
+                name: album.name.clone(),
+                pic_url: album.pic_url.clone(),
+            });
+        }
+    }
+    
+    // 重建歌曲缓存和映射关系
+    {
+        let mut music_cache = MUSIC_CACHE.lock().unwrap();
+        let mut artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap();
+        let mut album_songs_map = ALBUM_SONGS_MAP.lock().unwrap();
+        
+        music_cache.clear();
+        artist_songs_map.clear();
+        album_songs_map.clear();
+        
+        // 按目录组织歌曲
+        let mut dir_songs: HashMap<PathBuf, Vec<Song>> = HashMap::new();
+        
+        for cached_song in &cache.songs {
+            let dir = cached_song.fingerprint.path.parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_default();
+            
+            // 查找艺术家和专辑
+            let artists: Vec<Artist> = cached_song.artists.iter()
+                .filter_map(|name| {
+                    ARTIST_CACHE.lock().unwrap().get(name).cloned()
+                })
+                .collect();
+            
+            let album = ALBUM_CACHE.lock().unwrap()
+                .get(&cached_song.album)
+                .cloned()
+                .unwrap_or_else(|| Album {
+                    id: 0,
+                    name: cached_song.album.clone(),
+                    pic_url: String::new(),
+                });
+            
+            let song = Song {
+                name: cached_song.name.clone(),
+                id: cached_song.id,
+                ar: artists,
+                lyric: cached_song.lyric.clone(),
+                al: album,
+                src: cached_song.fingerprint.path.clone(),
+                track_number: cached_song.track_number,
+            };
+            
+            // 更新映射
+            for artist in &song.ar {
+                artist_songs_map
+                    .entry(artist.id)
+                    .or_insert_with(Vec::new)
+                    .push(song.clone());
+            }
+            
+            album_songs_map
+                .entry(song.al.id)
+                .or_insert_with(Vec::new)
+                .push(song.clone());
+            
+            dir_songs.entry(dir).or_insert_with(Vec::new).push(song);
+        }
+        
+        *music_cache = dir_songs;
+    }
+}
+
+// 保存到持久化缓存
+fn save_to_persistent_cache() {
+    if let Some(manager_guard) = CacheManager::instance() {
+        if let Some(manager) = manager_guard.as_ref() {
+            // 从内存缓存构建持久化缓存
+            let cache = build_persistent_cache_from_memory();
+            
+            if let Err(e) = manager.save_to_disk(&cache) {
+                eprintln!("Failed to save to persistent cache: {}", e);
+            } else {
+                manager.update_memory_cache(cache);
+                println!("Saved to persistent cache successfully");
+            }
+        }
+    }
+}
+
+// 从内存缓存构建持久化缓存
+fn build_persistent_cache_from_memory() -> MusicLibraryCache {
+    use cache_manager::{CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    
+    let mut cache = MusicLibraryCache::new();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    
+    // 复制艺术家
+    {
+        let artist_cache = ARTIST_CACHE.lock().unwrap();
+        for (_, artist) in artist_cache.iter() {
+            cache.artists.push(CachedArtist {
+                id: artist.id,
+                name: artist.name.clone(),
+                alias: artist.alias.clone(),
+            });
+        }
+    }
+    
+    // 复制专辑
+    {
+        let album_cache = ALBUM_CACHE.lock().unwrap();
+        for (_, album) in album_cache.iter() {
+            cache.albums.push(CachedAlbum {
+                id: album.id,
+                name: album.name.clone(),
+                pic_url: album.pic_url.clone(),
+            });
+        }
+    }
+    
+    // 复制歌曲
+    {
+        let music_cache = MUSIC_CACHE.lock().unwrap();
+        for (_, songs) in music_cache.iter() {
+            for song in songs {
+                let fingerprint = match FileFingerprint::from_path(&song.src) {
+                    Ok(fp) => fp,
+                    Err(_) => continue,
+                };
+                
+                cache.songs.push(CachedSongMetadata {
+                    id: song.id,
+                    name: song.name.clone(),
+                    artists: song.ar.iter().map(|a| a.name.clone()).collect(),
+                    album: song.al.name.clone(),
+                    track_number: song.track_number,
+                    lyric: song.lyric.clone(),
+                    fingerprint,
+                    cached_at: now,
+                });
+            }
+        }
+    }
+    
+    // 复制映射关系
+    {
+        let artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap();
+        for (artist_id, songs) in artist_songs_map.iter() {
+            cache.artist_songs_map.insert(
+                *artist_id,
+                songs.iter().map(|s| s.id).collect(),
+            );
+        }
+    }
+    
+    {
+        let album_songs_map = ALBUM_SONGS_MAP.lock().unwrap();
+        for (album_id, songs) in album_songs_map.iter() {
+            cache.album_songs_map.insert(
+                *album_id,
+                songs.iter().map(|s| s.id).collect(),
+            );
+        }
+    }
+    
+    cache.cached_at = now;
+    cache
+}
+
+// 后台执行增量扫描
+fn perform_background_incremental_scan() {
+    std::thread::spawn(|| {
+        println!("Starting background incremental scan...");
+        PerformanceMonitor::start_timer("background_scan");
+        
+        // 执行增量扫描
+        let music_dirs = get_music_dirs();
+        
+        let existing_cache = if let Some(manager_guard) = CacheManager::instance() {
+            if let Some(manager) = manager_guard.as_ref() {
+                manager.load_from_disk().unwrap_or_else(|_| MusicLibraryCache::new())
+            } else {
+                MusicLibraryCache::new()
+            }
+        } else {
+            MusicLibraryCache::new()
+        };
+        
+        let max_song_id = existing_cache.songs.iter().map(|s| s.id).max().unwrap_or(0);
+        let max_artist_id = existing_cache.artists.iter().map(|a| a.id).max().unwrap_or(0);
+        let max_album_id = existing_cache.albums.iter().map(|a| a.id).max().unwrap_or(0);
+        
+        let scanner = IncrementalScanner::new(max_song_id, max_artist_id, max_album_id);
+        
+        match scanner.scan_incremental(&music_dirs, &existing_cache) {
+            Ok(scan_result) => {
+                if scan_result.total_changes() > 0 {
+                    println!("Background scan found {} changes, updating cache...", 
+                        scan_result.total_changes());
+                    
+                    let new_cache = incremental_scanner::build_cache_from_scan(
+                        scan_result, 
+                        Some(&existing_cache)
+                    );
+                    
+                    // 保存新缓存
+                    if let Some(manager_guard) = CacheManager::instance() {
+                        if let Some(manager) = manager_guard.as_ref() {
+                            let _ = manager.save_to_disk(&new_cache);
+                            manager.update_memory_cache(new_cache);
+                        }
+                    }
+                    
+                    // 更新内存缓存
+                    rebuild_memory_cache_from_persistent(
+                        &CacheManager::instance().unwrap().as_ref().unwrap()
+                            .load_from_disk().unwrap()
+                    );
+                } else {
+                    println!("No changes detected in background scan");
+                }
+            }
+            Err(e) => {
+                eprintln!("Background incremental scan failed: {}", e);
+            }
+        }
+        
+        if let Some(duration) = PerformanceMonitor::end_timer("background_scan") {
+            println!("Background scan completed in {}ms", duration);
+            PerformanceMonitor::record_metric(
+                MetricType::ScanDuration,
+                duration,
+                "background_scan".to_string(),
+            );
+        }
+    });
 }
 
 #[tauri::command]
@@ -520,64 +862,89 @@ async fn get_low_quality_album_cover(
     album_id: u32,
     max_resolution: u32,
 ) -> Result<tauri::ipc::Response, String> {
-    let start = std::time::Instant::now();
-
+    PerformanceMonitor::start_timer(&format!("album_cover_{}", album_id));
+    
     let cache_dir = get_cache_dir().map_err(|e| e.to_string())?;
     let cache_path = get_cache_image_path(&cache_dir, album_id, max_resolution);
+    
+    // 检查缓存是否存在
     if cache_path.exists() {
+        println!("Cache hit for album {} at resolution {}", album_id, max_resolution);
+        
+        if let Some(duration) = PerformanceMonitor::end_timer(&format!("album_cover_{}", album_id)) {
+            PerformanceMonitor::record_metric(
+                MetricType::CacheHit,
+                duration,
+                format!("album_cover:{}", album_id),
+            );
+        }
+        
         return read_image_from_cache(&cache_path);
     }
 
+    // 获取封面数据
     let cover_data = get_album_cover_data(album_id).map_err(|e| e.to_string())?;
-    let duration = start.elapsed();
-    println!("读取封面数据耗时: {:?}", duration);
 
-    let start = std::time::Instant::now();
-    let image = image::load_from_memory(&cover_data).map_err(|e| e.to_string())?;
-    let resized_image = tokio::task::spawn_blocking(move || resize_image(image, max_resolution))
-        .await
-        .map_err(|e| format!("JoinError: {:?}", e))?;
-    let duration = start.elapsed();
-    println!("图片处理耗时: {:?}", duration);
+    // 使用新的图片处理器（带线程池控制）
+    let processed_data = IMAGE_PROCESSOR
+        .process_album_cover(cover_data, max_resolution)
+        .await?;
 
-    let mut buffer = Vec::new();
-    {
-        let mut cursor = Cursor::new(&mut buffer);
-        resized_image
-            .write_to(&mut Cursor::new(&mut buffer), image::ImageFormat::WebP)
-            .map_err(|e| e.to_string())?;
+    // 写入缓存
+    fs::write(&cache_path, &processed_data).map_err(|e| e.to_string())?;
+
+    if let Some(duration) = PerformanceMonitor::end_timer(&format!("album_cover_{}", album_id)) {
+        PerformanceMonitor::record_metric(
+            MetricType::CacheMiss,
+            duration,
+            format!("album_cover:{}", album_id),
+        );
     }
 
-    fs::write(&cache_path, &buffer).map_err(|e| e.to_string())?;
-
-    Ok(tauri::ipc::Response::new(buffer))
+    Ok(tauri::ipc::Response::new(processed_data))
 }
 
 #[tauri::command]
 fn get_album_cover(album_id: u32) -> Result<tauri::ipc::Response, String> {
-    let cache = MUSIC_CACHE.lock().unwrap();
-    for songs in cache.values() {
-        for song in songs {
-            if song.al.id == album_id {
-                // 使用新的music_tag模块读取封面
-                let parser = MetadataParser::new();
-                match parser.parse(&song.src) {
-                    Ok(metadata) => {
-                        if let Some(picture) = metadata.front_cover() {
-                            return Ok(tauri::ipc::Response::new(picture.data.clone()));
+    PerformanceMonitor::start_timer(&format!("album_cover_origin_{}", album_id));
+    
+    let result = (|| {
+        let cache = MUSIC_CACHE.lock().unwrap();
+        for songs in cache.values() {
+            for song in songs {
+                if song.al.id == album_id {
+                    // 使用新的music_tag模块读取封面
+                    let parser = MetadataParser::new();
+                    match parser.parse(&song.src) {
+                        Ok(metadata) => {
+                            if let Some(picture) = metadata.front_cover() {
+                                return Ok(tauri::ipc::Response::new(picture.data.clone()));
+                            }
                         }
+                        Err(_) => continue,
                     }
-                    Err(_) => continue,
                 }
             }
         }
+        Err("Album cover not found".into())
+    })();
+    
+    if let Some(duration) = PerformanceMonitor::end_timer(&format!("album_cover_origin_{}", album_id)) {
+        let from_cache = result.is_ok();
+        PerformanceMonitor::record_metric(
+            if from_cache { MetricType::CacheHit } else { MetricType::CacheMiss },
+            duration,
+            format!("album_cover_origin:{}", album_id),
+        );
     }
-    // 如果循环结束还没有找到封面，返回错误
-    Err("Album cover not found".into())
+    
+    result
 }
 
 #[tauri::command]
 async fn get_music_file(song_id: u32) -> Result<tauri::ipc::Response, String> {
+    PerformanceMonitor::start_timer(&format!("music_file_{}", song_id));
+    
     println!("Searching for song with ID: {}", song_id);
 
     // 查找具有匹配 song_id 的歌曲，并立即释放锁
@@ -594,7 +961,7 @@ async fn get_music_file(song_id: u32) -> Result<tauri::ipc::Response, String> {
     };
 
     // 根据找到的路径读取文件
-    if let Some(song_path) = song_path {
+    let result = if let Some(song_path) = song_path {
         println!("Song found, trying to read file: {}", song_path.display());
 
         // 读取歌曲文件内容
@@ -608,7 +975,17 @@ async fn get_music_file(song_id: u32) -> Result<tauri::ipc::Response, String> {
     } else {
         println!("Music file not found in cache");
         Err("Music file not found".into())
+    };
+    
+    if let Some(duration) = PerformanceMonitor::end_timer(&format!("music_file_{}", song_id)) {
+        PerformanceMonitor::record_metric(
+            MetricType::ResourceLoadTime,
+            duration,
+            format!("music_file:{}", song_id),
+        );
     }
+    
+    result
 }
 
 #[tauri::command]
@@ -713,7 +1090,8 @@ fn close_app(window: tauri::Window) {
 // Tauri应用入口点
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // init_application();
+    // 初始化缓存管理器
+    let _ = CacheManager::init();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -735,7 +1113,21 @@ pub fn run() {
             get_low_quality_album_cover,
             init_application,
             add_users_music_dir,
-            get_users_music_dir
+            get_users_music_dir,
+            // 缓存管理命令
+            cache_manager::get_cache_stats,
+            cache_manager::clear_music_cache,
+            cache_manager::is_cache_valid,
+            // 增量扫描命令
+            incremental_scanner::perform_incremental_scan,
+            incremental_scanner::perform_full_scan,
+            // 性能监控命令
+            performance_monitor::get_performance_stats,
+            performance_monitor::get_performance_report,
+            performance_monitor::reset_performance_stats,
+            performance_monitor::record_resource_load,
+            performance_monitor::start_performance_timer,
+            performance_monitor::end_performance_timer,
         ])
         .setup(|_app| {
             Ok(())

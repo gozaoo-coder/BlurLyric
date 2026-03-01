@@ -37,7 +37,7 @@ export default {
     },
     maxResolution: {
       type: [Number, String], // id可以是字符串或数字
-      default: manager.tauri.enum_resolutions.normal,
+      default: 368, // 默认NORMAL分辨率 46 * 8
     }
   },
   methods: {

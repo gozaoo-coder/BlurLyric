@@ -1,5 +1,4 @@
 <script>
-
     export default {
         data(){
             return {}
@@ -7,24 +6,37 @@
         props: {
             cancel: Function,
             finish: Function,
-
+        },
+        methods: {
+            handleCancel() {
+                if (this.cancel) {
+                    this.cancel();
+                }
+            },
+            handleFinish() {
+                if (this.finish) {
+                    // 如果finish返回false，则不关闭对话框
+                    const result = this.finish();
+                    if (result === false) {
+                        return;
+                    }
+                }
+            }
         },
         components:{
         }
     }
 </script>
 <template>
-    <div class="background">
+    <div class="background" @click.self="handleCancel">
         <div class="container">
             <slot  />
-            <!-- <button>a</button>
-              -->
             <iconFlexRow class="toRightEnd">
-                <iconWithText @click="cancel" type="background">
+                <iconWithText @click="handleCancel" type="background">
                     <template #icon><i class="bi bi-x"></i></template>
                     <template #text>取消</template>
                 </iconWithText>
-                <iconWithText @click="finish" type="buttom_active">
+                <iconWithText @click="handleFinish" type="buttom_active">
                     <template #icon><i class="bi bi-check"></i></template>
                     <template #text>确定</template>
                 </iconWithText>
