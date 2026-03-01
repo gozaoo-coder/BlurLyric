@@ -46,6 +46,7 @@
         font-size: 32px;
         transition: color 0.25s cubic-bezier(.5,.3,.2,1);
         font-weight: 900;
+        /* z-index: 1000; */
 
     }
     .title.hidden{

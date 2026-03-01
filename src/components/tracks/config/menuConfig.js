@@ -155,6 +155,13 @@ export function createMusicTableMenuItems(params) {
     }
   ];
 
+  // 获取路由器实例（通过全局属性）
+  const getRouter = () => {
+    // 从 Vue 应用实例获取 router
+    const app = document.querySelector('#app')?.__vue_app__;
+    return app?.config?.globalProperties?.$router;
+  };
+
   // 音乐详情菜单
   const detailMenuItems = [
     {
@@ -178,11 +185,24 @@ export function createMusicTableMenuItems(params) {
       handleClick: () => {
         // 跳转到艺人页面
         if (line.ar?.[0]?.id && line.ar[0].id !== -2) {
-          // 使用 Vue Router 导航
-          const artistId = line.ar[0].id;
+          const router = getRouter();
+          if (router) {
+            router.push({
+              path: '/localArtist/',
+              query: {
+                id: line.ar[0].id,
+                type: 'local'
+              }
+            });
+          }
           regMessage?.({
             type: 'Message',
             content: `正在跳转到艺人：${line.ar[0].name}`
+          });
+        } else {
+          regMessage?.({
+            type: 'Warning',
+            content: '该艺人暂无详情页面'
           });
         }
       }
@@ -193,53 +213,52 @@ export function createMusicTableMenuItems(params) {
       handleClick: () => {
         // 跳转到专辑页面
         if (line.al?.id && line.al.id !== -2) {
-          const albumId = line.al.id;
+          const router = getRouter();
+          if (router) {
+            router.push({
+              path: '/localAlbum/',
+              query: {
+                id: line.al.id,
+                type: 'local'
+              }
+            });
+          }
           regMessage?.({
             type: 'Message',
             content: `正在跳转到专辑：${line.al.name}`
           });
+        } else {
+          regMessage?.({
+            type: 'Warning',
+            content: '该专辑暂无详情页面'
+          });
         }
       }
     },
-    { type: 'hr' },
     {
-      iconClass: ['bi', 'bi-info-circle'],
-      name: '音乐信息',
+      iconClass: ['bi', 'bi-music-note-beamed'],
+      name: '音乐详情',
       handleClick: () => {
-        // 显示音乐详细信息
-        const info = [];
-        if (line.duration) {
-          const minutes = Math.floor(line.duration / 60);
-          const seconds = Math.floor(line.duration % 60);
-          info.push(`时长: ${minutes}:${seconds.toString().padStart(2, '0')}`);
-        }
-        if (line.genre) info.push(`流派: ${line.genre}`);
-        if (line.year) info.push(`年份: ${line.year}`);
-        if (line.composer) info.push(`作曲: ${line.composer}`);
-        if (line.lyricist) info.push(`作词: ${line.lyricist}`);
-        if (line.bitrate) info.push(`比特率: ${line.bitrate} kbps`);
-        if (line.sampleRate) info.push(`采样率: ${line.sampleRate} Hz`);
-        if (line.channels) info.push(`声道: ${line.channels}`);
-        
-        // 显示其他标签
-        const otherTags = line.otherTags || line.other_tags;
-        if (otherTags && Object.keys(otherTags).length > 0) {
-          info.push('--- 其他标签 ---');
-          for (const [key, value] of Object.entries(otherTags)) {
-            info.push(`${key}: ${value}`);
+        // 跳转到音乐详情页面
+        if (line.id && line.id !== -2) {
+          const router = getRouter();
+          if (router) {
+            router.push({
+              path: '/musicDetail/',
+              query: {
+                id: line.id,
+                type: 'local'
+              }
+            });
           }
-        }
-        
-        if (info.length > 0) {
           regMessage?.({
             type: 'Message',
-            content: info.join('\n'),
-            duration: 5000
+            content: `正在跳转到音乐详情：${line.name}`
           });
         } else {
           regMessage?.({
             type: 'Warning',
-            content: '暂无详细信息'
+            content: '该音乐暂无详情页面'
           });
         }
       }

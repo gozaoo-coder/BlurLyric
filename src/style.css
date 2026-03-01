@@ -2,14 +2,14 @@ body{
   background-color: transparent;
   padding: none;
   margin: none;
-  font-family: Misans;
+  /* font-family: Misans; */
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
-@font-face {
+/* @font-face {
   font-family: MiSans;
   src: local('MiSans'), url('./assets/MiSans-Normal.ttf');
-}
+} */
 
 h2 {
   display: block;

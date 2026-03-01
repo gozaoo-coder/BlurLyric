@@ -36,6 +36,10 @@ const router =[
     {
         name: 'localAlbum',
         path: '/localAlbum/',component:()=>import('./routers/localAlbum.vue')
+    },
+    {
+        name: 'musicDetail',
+        path: '/musicDetail/',component:()=>import('./routers/musicDetail.vue')
     }
 ]
 

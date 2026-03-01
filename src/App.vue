@@ -874,7 +874,7 @@ export default {
     <messageDisplay />
     <topBar :titleOffsetTop="titleOffsetTop" :leftBarState="leftBarState">
         <template #title>
-            <textspawn :text="this.title" />
+            <textspawn :text="this.title.detail" />
         </template>
     </topBar>
 
