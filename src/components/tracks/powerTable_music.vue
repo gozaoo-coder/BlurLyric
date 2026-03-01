@@ -1,415 +1,193 @@
 <template>
-	<div class="buttomTrack">
-		<iconWithText @click="coverMusicTrack(this.currentTable.cellArray)" type="background">
-			<template #svg>
-				<i class="bi bi-play-fill"></i>
-			</template>
-			<template #text> 播放全部 </template>
-		</iconWithText>
-	</div><br>
-	<conditioner :condition="arraySortCondition" @conditionChange="arraySortCondition = $event; console.log(arraySortCondition);
-	;currentTable.cellArray = baseMethods.filterAndSort(tableData.cellArray, $event);" />
-	<div class="table-container">
-		<!--内容标题-->
-		<div ref="table_name" class="table-name">
-			<div v-for="(item, index) in currentTable.cellName" class="table-name-cell" :style="{
-				['flex' + ((item.sizing) ? ('-' + item.sizing) : '')]: (item.sizingValue) ? item.sizingValue : 1,
-				...item.spacialStyle
-			}">{{ item.name }}</div>
-		</div>
+  <div class="buttomTrack">
+    <iconWithText @click="playAll" type="background">
+      <template #svg>
+        <i class="bi bi-play-fill"></i>
+      </template>
+      <template #text>播放全部</template>
+    </iconWithText>
+  </div>
+  <br />
 
-		<contextMenu @click="doubleClick(line_index)" v-for="(line, line_index) in currentTable.cellArray" :menuItems="[
-			{ iconClass: ['bi', 'bi-play-circle'], name: '插入单曲', handleClick: () => { pushMusic(line) } },
-			{
-				iconClass: ['bi', 'bi-music-note-list'],
-				name: '其他播放操作',
-				type: 'hoverMenu',
-				menuItems: [
-					{ iconClass: ['bi', 'bi-vinyl'], name: '播放该列表', handleClick: () => { console.log('点击了菜单项1'); } },
-					{ iconClass: ['bi', 'bi-skip-forward-circle'], name: '下一首播放', handleClick: () => { console.log('点击了菜单项1'); } },
-					{ iconClass: ['bi', 'bi-plus-circle'], name: '加入播放列表末', handleClick: () => { console.log('点击了菜单项1'); } },
-				]
-			},
-			{
-				iconClass: ['bi', 'bi-clipboard'],
-				name: '复制内容...',
-				type: 'hoverMenu',
-				menuItems: [
-					{ iconClass: ['bi', 'bi-justify-left'], name: '一键复制', handleClick: () => { console.log('点击了菜单项1'); } },
-					{ iconClass: ['bi', 'bi-music-note'], name: '复制 音乐名', handleClick: () => { console.log('点击了菜单项1'); } },
-					{ iconClass: ['bi', 'bi-image'], name: '复制 图片链接', handleClick: () => { console.log('点击了菜单项1'); } },
-					{ iconClass: ['bi', 'bi-people'], name: '复制 创作者名', handleClick: () => { console.log('点击了菜单项1'); } },
-					{ iconClass: ['bi', 'bi-disc'], name: '复制 专辑名 ', handleClick: () => { console.log('点击了菜单项1'); } },]
-			},
-			{ type: 'hr' },
-			{
-				iconClass: ['bi', 'bi-arrow-down-up'],
-				name: '排列方式',
-				type: 'hoverMenu',
-				menuItems: [
-					{ name: '默认', handleClick: () => { console.log('点击了菜单项1'); } },
-					{ name: '#', handleClick: () => { console.log('点击了菜单项1'); } },
-					{ name: '歌名', handleClick: () => { console.log('点击了菜单项1'); } },
-					{ name: '歌手', handleClick: () => { console.log('点击了菜单项1'); } },
-					{ name: '专辑', handleClick: () => { console.log('点击了菜单项1'); } },
-					{ name: '时长', handleClick: () => { console.log('点击了菜单项1'); } },
-				]
-			},
-			{ type: 'hr' },
-			{
-				iconClass: ['bi', 'bi-info-circle'],
-				name: '音乐详情',
-				type: 'hoverMenu',
-				menuItems: [
-					{ iconClass: ['bi', 'bi-image'], name: '查看专辑图片', handleClick: () => { console.log('点击了菜单项1'); } },
-					{ iconClass: ['bi', 'bi-people'], name: '音乐人 ' + line.artist, handleClick: () => { console.log('点击了菜单项1'); } },
-					{ iconClass: ['bi', 'bi-disc'], name: '专辑 ' + line.album, handleClick: () => { console.log('点击了菜单项1'); } },]
-			},
-			{ iconClass: ['bi', 'bi-file-earmark-music'], name: '转存音乐文件', handleClick: () => { console.log('点击了菜单项1'); } },
-			{ iconClass: ['bi', 'bi-share'], name: '分享', handleClick: () => { console.log('点击了菜单项1'); } },
-		]
-			">
-			<!--内容位置-->
-			<div v-if="shouldDisplayIndexRange[1] >= line_index" class="table-row">
+  <conditioner
+    :condition="arraySortCondition"
+    @conditionChange="handleConditionChange"
+  />
 
-				<div :style="{
-					['flex' + ((item.sizing) ? ('-' + item.sizing) : '')]: (item.sizingValue) ? item.sizingValue : 1,
-					...item.spacialStyle
-				}" v-for="(item, index) in currentTable.cellName" :class="['table-cell', item.type]">
-					<div class="relativeBox">
-						<!--内容分类-->
-						<!--文本类型-->
-						<span v-if="item.type == 'content' || item.type == 'trackOrdinalNumber'">
-							<!-- {{  -->
-							<!-- // (typeof(item.path)) -->
-							<!-- // }} -->
-							<!-- {{ item.path() }} -->
-							{{ item.path.apply({
-								line, line_index, item, index
-							}) }}
-						</span>
-						<!--图片类型-->
-						<lazy-load-cover-image-vue
-							v-if="item.type == 'image' && shouldDisplayIndexRange[0] <= line_index" :id='item.path.apply({
-								line, line_index, item, index
-							})' style="border-radius: 5%;left:0;top:0;height: 100%;width: 100%;position: absolute;">
-						</lazy-load-cover-image-vue>
+  <div class="table-container">
+    <!-- 表头 -->
+    <div ref="tableHeaderRef" class="table-name">
+      <div
+        v-for="(item, index) in currentTable.cellName"
+        :key="index"
+        class="table-name-cell"
+        :style="{
+          ['flex' + (item.sizing ? '-' + item.sizing : '')]: item.sizingValue || 1,
+          ...item.spacialStyle
+        }"
+      >
+        {{ item.name }}
+      </div>
+    </div>
 
-					</div>
-				</div>
+    <!-- 表格行 -->
+    <contextMenu
+      v-for="(line, line_index) in currentTable.cellArray"
+      :key="line.id || line_index"
+      :menuItems="getRowMenuItems(line, line_index)"
+      @click="handleRowClick(line_index)"
+    >
+      <div v-if="shouldRenderRow(line_index)" class="table-row">
+        <div
+          v-for="(item, index) in currentTable.cellName"
+          :key="index"
+          :class="['table-cell', item.type]"
+          :style="{
+            ['flex' + (item.sizing ? '-' + item.sizing : '')]: item.sizingValue || 1,
+            ...item.spacialStyle
+          }"
+        >
+          <div class="relativeBox">
+            <!-- 文本类型 -->
+            <span v-if="item.type === 'content' || item.type === 'trackOrdinalNumber'">
+              {{ item.path.call({ line, line_index, item, index }) }}
+            </span>
 
-			</div>
-		</contextMenu>
-		<!-- 其他行 -->
-	</div>
+            <!-- 图片类型 -->
+            <lazy-load-cover-image-vue
+              v-if="item.type === 'image' && shouldRenderImage(line_index)"
+              :id="item.path.call({ line, line_index, item, index })"
+              style="border-radius: 5%; left: 0; top: 0; height: 100%; width: 100%; position: absolute"
+            />
+          </div>
+        </div>
+      </div>
+    </contextMenu>
+  </div>
 </template>
 
 <style scoped>
 .table-container {
-	display: flex;
-	width: 100%;
-	border-collapse: collapse;
-	flex-direction: column;
-	justify-content: space-between;
-	gap: 4px;
+  display: flex;
+  width: 100%;
+  border-collapse: collapse;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
 }
 
 .table-row {
-	display: flex;
-	height: 54px;
-	padding: 4px;
-	box-sizing: border-box;
-	gap: 3px;
+  display: flex;
+  height: 54px;
+  padding: 4px;
+  box-sizing: border-box;
+  gap: 3px;
 }
 
 .table-name {
-	background-color: #00000007;
-	border-radius: 9px;
-	display: flex;
-	box-shadow: var(--Shadow-value-low);
-	color: var(--fontColor-content-unimportant);
-	height: 40px;
-	gap: 3px;
-	padding: 4px;
-	box-sizing: border-box;
+  background-color: #00000007;
+  border-radius: 9px;
+  display: flex;
+  box-shadow: var(--Shadow-value-low);
+  color: var(--fontColor-content-unimportant);
+  height: 40px;
+  gap: 3px;
+  padding: 4px;
+  box-sizing: border-box;
 }
 
 .table-name-cell {
-	display: flex;
-	align-items: center;
-	padding: 4px;
+  display: flex;
+  align-items: center;
+  padding: 4px;
 }
 
-
-
 .table-row:hover {
-	background-color: #0001;
-	border-radius: 9px;
-	box-shadow: var(--Shadow-value-normal);
+  background-color: #0001;
+  border-radius: 9px;
+  box-shadow: var(--Shadow-value-normal);
 }
 
 .table-cell {
-	display: flex;
-	padding: 4px;
-	text-overflow: ellipsis;
-	position: relative;
-	align-items: center;
-	white-space: nowrap;
+  display: flex;
+  padding: 4px;
+  text-overflow: ellipsis;
+  position: relative;
+  align-items: center;
+  white-space: nowrap;
 }
 
 .relativeBox {}
 
 .table-cell.content {
-	display: flex;
-	padding: 4px;
-	text-overflow: ellipsis;
-	overflow: hidden;
-	align-items: center;
-	white-space: nowrap;
+  display: flex;
+  padding: 4px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  align-items: center;
+  white-space: nowrap;
 }
 </style>
 
 <script>
+import { onMounted } from 'vue';
 import contextMenu from '../base/contextMenu.vue';
-import baseMethods from '../../js/baseMethods';
-import lazyLoadCoverImageVue from '../base/lazyLoadCoverImage.vue'
-import conditioner from './conditioner.vue'
+import lazyLoadCoverImageVue from '../base/lazyLoadCoverImage.vue';
+import conditioner from './conditioner.vue';
+import { useMusicTable } from './composables/useMusicTable';
+
 export default {
-	inject: ['scrollState'],
-	data() {
-		return {
-			baseMethods,
-			arraySortCondition: {
-				// 定义condition对象
-				filterFunction: (item) => {
-					const content = "";
-					return (
-						item.name.includes(content) ||
-						item.artist.some(artist => artist.name.includes(content)) ||
-						item.album.name.includes(content)
-					);
-				},
-				getKey: (item) => new String(item.track_number),
-				sortOrder: 'asc', // 可选参数，'asc'或'desc'
-			},
-			tempTableData: {},
-			currentTable: {
-				cellName: [{
-					type: 'trackOrdinalNumber',
-					path: function () {
-						return this.line_index + 1;
-					},
-					name: '#',
-					sizing: 'basis',
-					sizingValue: '1.75em',
-					spacialStyle: {
-						color: 'var(--fontColor-content-moreUnimportant)',
-						fontSize: '.8em',
-					}
-				}, {
-					type: 'image',
-					path: function () {
-						return (this.line.al.name != 'Unknown Album') ? this.line.al.id : -2;
-					},
-					name: '图像',
-					sizing: 'basis',
-					sizingValue: '38px'
-				}, {
-					type: 'content',
-					path: function () {
-						return this.line.name;
-					},
-					name: '歌曲名',
-				}, {
-					type: 'content',
-					path: function () {
-						let first = false
-						return this.line.ar.map((ar, ar_index) => {
-							// if(ar_index == this.line.ar.length-1){
-							return ar.name
-							// }
-							// return ar.name+'&'
-						}).join("&");
-					},
-					name: '歌手',
-					spacialStyle: {
-						color: 'var(--fontColor-content-unimportant)',
-					}
-				}, {
-					type: 'content',
-					path: function () {
-						return this.line.al.name;
-					},
-					name: '专辑',
-					spacialStyle: {
-						color: 'var(--fontColor-content-unimportant)',
-					}
-				}
-					// ,
-					//  {
-					// 	type: 'content',
-					// 	path:function(){
-					// 		return this.line_index+1;
-					// 	},
-					// 	name: '时长',
-					// 	sizing: 'basis',
-					// 	sizingValue: '40px',
-					// 	spacialStyle: {
-					// 		color: 'var(--fontColor-content-unimportant)',
-					// 	}
-					// }
-				],
-				cellArray: [{
-					name: '时间线',
-					id: 0,
-					artist: 'HOYO-MIX',
-					album: '崩坏星穹铁道-失控 Out of Control',
-					duration: '02:02',
-					trackOrdinalNumber: '1',
-					imgSrc: 'http://p1.music.126.net/RWIGyShmnjmUxizXco6fVg==/109951168505830245.jpg',
+  name: 'PowerTableMusic',
+  components: {
+    contextMenu,
+    lazyLoadCoverImageVue,
+    conditioner
+  },
+  props: {
+    tableData: {
+      type: Object,
+      default: () => ({})
+    },
+    noCover: {
+      type: Boolean,
+      default: false
+    }
+  },
+  emits: [],
+  setup(props) {
+    const {
+      currentTable,
+      arraySortCondition,
+      tableHeaderRef,
+      visibleRange,
+      updateHeaderInfo,
+      shouldRenderRow,
+      shouldRenderImage,
+      handleRowClick,
+      getRowMenuItems,
+      handleConditionChange,
+      playAll
+    } = useMusicTable(props);
 
-					ar: [{
-						id: -2,
-						name: 'HOYO-MIX',
-						alias: []
-					}],
-					lyric: {
-						type: 'yrc',
-						lines: [{
-							startTime: 0,
-							duration: 2,
-							endTime: 2,
-							words: [{
-								startTime: 0,
-								duration: 1,
-								endTime: 1,
-								word: 'Hello '
-							},
-							{
-								startTime: 1,
-								duration: 0.5,
-								endTime: 1.5,
-								word: 'World'
-							}
-							],
-							text: 'Hello World'
-						}]
-					},
-					al: {
-						id: -2,
-						name: '崩坏星穹铁道-失控 Out of Control',
-						picUrl: 'http://p1.music.126.net/RWIGyShmnjmUxizXco6fVg==/109951168505830245.jpg',
-					},
-					src: null
-				}]
-			},
-			lastClick: [{
-				index: 0,
-				timeStamp: Date.now()
-			}, {
-				index: 0,
-				timeStamp: Date.now()
-			}],
-			shouldDisplayIndexRange: [-1, 0]
-		}
-	},
-	components: {
-		lazyLoadCoverImageVue,
-		contextMenu,
-		conditioner
-	},
-	props: {
-		tableData: Object,
-		noCover: Boolean
-	},
-	mounted() {
-		if (this.noCover == true) {
-			this.currentTable.cellName.splice(1, 1)
-		}
-		this.freshShouldDisplay()
-	},
-	methods: {
-		copy: baseMethods.copy,
-		doubleClick(line_index) {
-			let newTimestamp = Date.now();
-			// console.log("pushed",this.currentTable.cellArray[line_index]);
+    onMounted(() => {
+      updateHeaderInfo();
+    });
 
-			if (this.lastClick[0].index == line_index && newTimestamp - this.lastClick[0].timeStamp < 300) {
-				// 触发切歌事件
-				let hasBeenActived = false;
+    return {
+      // 状态
+      currentTable,
+      arraySortCondition,
+      tableHeaderRef,
+      visibleRange,
 
-				// 如果连续按了三次，则覆盖当前播放列表
-				if (
-					(2 * (newTimestamp) - this.lastClick[0].timeStamp - this.lastClick[1].timeStamp < 600) && // 确保是三次快速点击
-					this.lastClick[0].index == line_index && // 确保是同一首歌
-					this.lastClick[1].index == line_index
-				) {
-					coverMusicTrack(this.currentTable.cellArray, line_index)
-					hasBeenActived = true;
-
-				}
-
-				// 当前歌单是当前播放歌单，则切到当前index
-				if (hasBeenActived == false&&Object.is(this.musicTrack, this.currentTable.cellArray)) {
-					this.nextMusic(line_index)
-				} else if(hasBeenActived == false) {
-					// 否则将选中曲目插入播放列表
-					this.pushMusic(this.currentTable.cellArray[line_index]);
-				}
-			}
-			this.lastClick[1].index = this.lastClick[0].index
-			this.lastClick[1].timeStamp = this.lastClick[0].timeStamp
-
-			this.lastClick[0].index = line_index
-			this.lastClick[0].timeStamp = newTimestamp
-
-		},
-		freshShouldDisplay() {
-			const gap = 4;
-			const oneTrackHeight = 54;
-			const firstTop = gap + this.$refs.table_name.offsetTop + this.$refs.table_name.offsetHeight
-			const scrollTop = this.scrollState.scrollTop;
-			const bodyHeight = document.body.offsetHeight;
-
-			// 计算第一个可见行的索引
-			let couldBeSeeFirstIndex = Math.floor((scrollTop - firstTop) / (oneTrackHeight + gap));
-			// 计算最后一个可见行的索引
-			let couldBeSeeFinalIndex = Math.floor((scrollTop - firstTop + bodyHeight) / (oneTrackHeight + gap)) + 2;
-			// 确保索引不会小于0
-			couldBeSeeFirstIndex = couldBeSeeFirstIndex < 0 ? 0 : couldBeSeeFirstIndex;
-			if (this.shouldDisplayIndexRange[0] != couldBeSeeFirstIndex || this.shouldDisplayIndexRange[1] != couldBeSeeFinalIndex) { this.shouldDisplayIndexRange = [couldBeSeeFirstIndex, couldBeSeeFinalIndex] }
-
-			// console.log(this.shouldDisplayIndexRange);
-		}
-	},
-	watch: {
-		scrollState: {
-			deep: true,
-			handler(newValue, oldValue) {
-				this.freshShouldDisplay()
-			},
-		},
-		tableData: {
-			handler(newValue) {
-				if (newValue && newValue.cellName != undefined) {
-					this.currentTable = newValue
-					this.currentTable.cellArray = baseMethods.filterAndSort(this.currentTable.cellArray, this.arraySortCondition)
-				} else if (newValue && newValue.cellArray != undefined) {
-					this.currentTable.cellArray = baseMethods.filterAndSort(newValue.cellArray, this.arraySortCondition)
-				}
-			},
-			deep: true,
-			immediate: true
-		},
-		// arraySortCondition: {
-		// 	deep: true,
-		// 	handler(newValue) {
-		// 		console.log(newValue);
-		// 		this.currentTable.cellArray = baseMethods.filterAndSort(this.currentTable.cellArray, newValue)
-		// 	},
-		// 	immediate: true
-		// }
-	},
-	inject: ['nextMusic', 'musicTrack', 'scrollState', 'pushMusic', 'pushMusicTrack', 'coverMusicTrack', 'cleanUpMusicTrack']
-}
+      // 方法
+      shouldRenderRow,
+      shouldRenderImage,
+      handleRowClick,
+      getRowMenuItems,
+      handleConditionChange,
+      playAll
+    };
+  }
+};
 </script>
