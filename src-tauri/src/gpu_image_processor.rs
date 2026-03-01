@@ -177,6 +177,10 @@ impl GpuImageProcessor {
 
     /// 调整图片大小
     pub fn resize(&self, image: &DynamicImage, new_width: u32, new_height: u32) -> Result<DynamicImage, String> {
+        // 确保尺寸至少为1
+        let new_width = new_width.max(1);
+        let new_height = new_height.max(1);
+        
         let rgba = image.to_rgba8();
         let (src_width, src_height) = rgba.dimensions();
 
@@ -197,6 +201,25 @@ impl GpuImageProcessor {
         });
 
         // 写入图片数据
+        // 计算对齐后的 bytes_per_row (必须是 256 的倍数)
+        let src_bytes_per_row_unaligned = 4 * src_width;
+        let src_bytes_per_row_aligned = ((src_bytes_per_row_unaligned + 255) / 256) * 256;
+        
+        // 如果需要对齐，创建填充后的数据
+        let src_data: Vec<u8> = if src_bytes_per_row_aligned == src_bytes_per_row_unaligned {
+            rgba.to_vec()
+        } else {
+            let mut padded = Vec::with_capacity((src_bytes_per_row_aligned * src_height) as usize);
+            for row in 0..src_height {
+                let row_start = (row * src_bytes_per_row_unaligned) as usize;
+                let row_end = row_start + src_bytes_per_row_unaligned as usize;
+                padded.extend_from_slice(&rgba.as_raw()[row_start..row_end]);
+                // 添加填充
+                padded.extend(vec![0u8; (src_bytes_per_row_aligned - src_bytes_per_row_unaligned) as usize]);
+            }
+            padded
+        };
+        
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &src_texture,
@@ -204,10 +227,10 @@ impl GpuImageProcessor {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &rgba,
+            &src_data,
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * src_width),
+                bytes_per_row: Some(src_bytes_per_row_aligned),
                 rows_per_image: Some(src_height),
             },
             wgpu::Extent3d {

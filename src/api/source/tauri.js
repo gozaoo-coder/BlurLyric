@@ -316,6 +316,11 @@ export class TauriSource extends Source {
 
         const resolution = validateResolution(maxResolution);
         
+        // 如果是origin或0，返回原图
+        if (resolution === RESOLUTIONS.ORIGIN || resolution === 0) {
+            return await this.getOriginAlbumCover(albumId);
+        }
+
         // 使用懒加载器加载封面
         try {
             const result = await lazyLoader.loadAlbumCover(albumId, resolution);
