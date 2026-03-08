@@ -29,4 +29,10 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  // 4. 将可选的 Tauri 插件标记为外部依赖
+  build: {
+    rollupOptions: {
+      external: ['@tauri-apps/plugin-autostart']
+    }
+  }
 }));

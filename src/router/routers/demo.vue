@@ -164,52 +164,7 @@ export default {
     </text_contextMenu>
     <div>
 
-        <powerTableVue :tableData="{
-            cellArray: [{
-                name: '时间线',
-                id: 0,
-                artist: 'HOYO-MIX',
-                album: '崩坏星穹铁道-失控 Out of Control',
-                duration: '02:02',
-                trackOrdinalNumber: '1',
-                imgSrc: 'http://p1.music.126.net/RWIGyShmnjmUxizXco6fVg==/109951168505830245.jpg',
 
-                ar: [{
-                    id: 0,
-                    name: 'HOYO-MIX',
-                    alias: []
-                }],
-                lyric: {
-                    type: 'yrc',
-                    lines: [{
-                        startTime: 0,
-                        duration: 2,
-                        endTime: 2,
-                        words: [{
-                            startTime: 0,
-                            duration: 1,
-                            endTime: 1,
-                            word: 'Hello '
-                        },
-                        {
-                            startTime: 1,
-                            duration: 0.5,
-                            endTime: 1.5,
-                            word: 'World'
-                        }
-                        ],
-                        text: 'Hello World'
-                    }]
-                },
-                al: {
-                    id: 0,
-                    name: '崩坏星穹铁道-失控 Out of Control',
-                    picUrl: 'http://p1.music.126.net/RWIGyShmnjmUxizXco6fVg==/109951168505830245.jpg',
-                },
-                src: null
-            }]
-        }">
-        </powerTableVue>
     </div>
 </template>
 
