@@ -82,39 +82,8 @@ async function toggleMaximize() {
   }
 }
 
-/**
- * 恢复窗口状态（置顶右上角）
- */
-async function restoreWindow() {
-  if (!isTauri.value) return;
-  
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    
-    // 获取屏幕尺寸
-    const screenWidth = window.screen.width;
-    const screenHeight = window.screen.height;
-    
-    // 获取窗口尺寸
-    const windowSize = await invoke('get_window_size');
-    
-    const padding = 16;
-    const x = screenWidth - windowSize[0] - 4 - padding;
-    const y = padding;
-    
-    await invoke('set_window_position', { x, y });
-  } catch (error) {
-    console.error('恢复窗口状态失败:', error);
-  }
-}
-
 // 菜单项配置
 const menuItems = ref([
-  {
-    label: '恢复窗口状态',
-    icon: 'bi bi-bounding-box-circles',
-    action: restoreWindow
-  },
   {
     label: '最小化',
     icon: 'bi bi-dash-lg',
@@ -130,19 +99,7 @@ const menuItems = ref([
 
 <template>
   <div class="window-controls">
-    <!-- 置顶按钮 -->
-    <Tippy content="切换窗口置顶">
-      <button 
-        aria-label="切换窗口置顶" 
-        @click="toggleAlwaysOnTop" 
-        @keydown.enter="toggleAlwaysOnTop"
-        @keydown.space="toggleAlwaysOnTop" 
-        :class="{ active: isAlwaysOnTop }"
-        :disabled="!isTauri"
-      >
-        <i :class="isAlwaysOnTop ? 'bi bi-pin-angle-fill' : 'bi bi-pin-angle'"></i>
-      </button>
-    </Tippy>
+
     
     <!-- 最小化按钮 -->
     <Tippy content="最小化">
