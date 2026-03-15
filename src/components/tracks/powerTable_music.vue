@@ -1,13 +1,14 @@
 <template>
-  <div class="buttomTrack">
-    <iconWithText @click="playAll" type="background">
-      <template #svg>
-        <i class="bi bi-play-fill"></i>
-      </template>
-      <template #text>播放全部</template>
-    </iconWithText>
-  </div>
-  <br />
+  <div class="container">
+    <div class="buttomTrack">
+      <iconWithText @click="playAll" type="background">
+        <template #svg>
+          <i class="bi bi-play-fill"></i>
+        </template>
+        <template #text>播放全部</template>
+      </iconWithText>
+    </div>
+    <!-- <br /> -->
 
   <conditioner
     :condition="arraySortCondition"
@@ -64,9 +65,15 @@
       </div>
     </contextMenu>
   </div>
+  </div>
 </template>
 
 <style scoped>
+.container{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 .table-container {
   display: flex;
   width: 100%;

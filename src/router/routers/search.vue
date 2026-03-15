@@ -130,7 +130,6 @@ onMounted(() => {
 
 <style scoped>
 .search-container {
-  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -138,12 +137,13 @@ onMounted(() => {
 
 /* 搜索输入框 */
 .search-input-wrapper {
+  margin-top: 10px;
   position: relative;
   display: flex;
   align-items: center;
   background-color: var(--background-color-element, #f5f5f5);
   border-radius: 12px;
-  padding: 12px 16px;
+  padding: 0px 13px;
   transition: box-shadow 0.2s ease;
 }
 
@@ -160,10 +160,10 @@ onMounted(() => {
 .search-input {
   flex: 1;
   border: none;
-  background: transparent;
+  background: transparent !important;
   font-size: 16px;
   color: var(--fontColor-main, #333);
-  outline: none;
+  outline: none !important;
 }
 
 .search-input::placeholder {

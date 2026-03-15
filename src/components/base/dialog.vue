@@ -44,7 +44,7 @@
         </div>
     </div>
 </template>
-<style>
+<style scoped>
     .background{
         position: fixed;
         left: 0;
