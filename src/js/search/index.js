@@ -91,9 +91,8 @@ export function useSearch() {
         id: track.album?.id || -2,
         picUrl: track.album?.picUrl || track.picUrl || ''
       },
-      // 源信息（用于多来源播放）
-      sources: track.sources || [],
-      primarySourceIndex: track.primarySourceIndex ?? 0,
+      // Trace 来源追踪（统一接口）
+      traces: track.traces || [],
       // 其他字段透传
       ...track
     };

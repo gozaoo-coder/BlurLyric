@@ -267,25 +267,25 @@ export function createMusicTableMenuItems(params) {
 
   // 查看来源菜单（当有多来源时显示）
   const sourcesMenuItems = [];
-  const sources = line.sources || [];
-  const primaryIndex = line.primarySourceIndex ?? line.primary_source_index ?? 0;
+  const traces = line.traces || [];
+  const primaryIndex = line.primary_trace_index ?? 0;
   
-  if (sources.length > 1) {
-    sources.forEach((source, index) => {
+  if (traces.length > 1) {
+    traces.forEach((trace, index) => {
       const isPrimary = index === primaryIndex;
-      const format = source.format?.toUpperCase() ?? '未知';
-      const bitrate = source.bitrate ? `${source.bitrate}kbps` : '';
-      const sampleRate = source.sampleRate ? `${(source.sampleRate / 1000).toFixed(1)}kHz` : '';
-      const qualityScore = source.qualityScore ?? source.quality_score ?? 0;
+      const resourceInfo = trace.resourceInfo || trace.resource_info || {};
+      const format = resourceInfo.format?.toUpperCase() ?? '未知';
+      const bitrate = resourceInfo.bitrate ? `${resourceInfo.bitrate}kbps` : '';
+      const sampleRate = resourceInfo.sampleRate ? `${(resourceInfo.sampleRate / 1000).toFixed(1)}kHz` : '';
+      const qualityScore = resourceInfo.qualityScore ?? resourceInfo.quality_score ?? 0;
       
-      // 格式化文件路径（显示文件名和目录）
-      const path = source.path || '';
-      const fileName = path.split(/[\\/]/).pop() || '未知文件';
-      const dirName = path.split(/[\\/]/).slice(-2, -1)[0] || '';
+      // 格式化来源信息
+      const sourceName = trace.sourceName || trace.source_name || '未知来源';
+      const dataId = trace.dataId || trace.data_id || '';
       
-      let displayName = `${isPrimary ? '★ ' : ''}${fileName}`;
-      if (dirName) {
-        displayName += ` (${dirName})`;
+      let displayName = `${isPrimary ? '★ ' : ''}${sourceName}`;
+      if (dataId) {
+        displayName += ` (${dataId.substring(0, 8)}...)`;
       }
       
       // 音质信息
@@ -299,16 +299,17 @@ export function createMusicTableMenuItems(params) {
         name: displayName,
         description: qualityInfo.join(' | ') + ` | 评分: ${qualityScore}`,
         handleClick: () => {
-          // 切换到该来源播放
           regMessage?.({
             type: 'Message',
-            content: `已切换到来源 ${index + 1}/${sources.length}: ${fileName}`
+            content: `已切换到来源 ${index + 1}/${traces.length}: ${sourceName}`
           });
-          // 这里可以触发切换来源的逻辑
         }
       });
     });
   }
+
+  const primaryTrace = line.primaryTrace?.() || line.traces?.[line.primary_trace_index ?? 0];
+  const primarySource = primaryTrace?.resourceInfo || {};
 
   // 主菜单
   return [
@@ -346,7 +347,7 @@ export function createMusicTableMenuItems(params) {
     // 当有多来源时显示"查看来源"菜单
     ...(sourcesMenuItems.length > 0 ? [{
       iconClass: ['bi', 'bi-collection'],
-      name: `查看来源 (${sources.length}个)`,
+      name: `查看来源 (${sourcesMenuItems.length}个)`,
       type: 'hoverMenu',
       menuItems: sourcesMenuItems
     }] : []),

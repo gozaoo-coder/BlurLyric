@@ -139,11 +139,13 @@
         from {
             transform: scale(.7) translate( -10px ,calc(-50% - 10px));
             opacity: 0;
+            filter: blur(20px);
         }
 
         to {
             transform: scale(1)  translate(0,-50%);
             opacity: 1;
+            filter: blur(0px);
 
 
         }

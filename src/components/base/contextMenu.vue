@@ -168,6 +168,7 @@ import hoverMenu from './hoverMenu.vue';
     @keyframes spawn_context_menu {
         from {
             transform: scale(.5) translate(-10px, -10px);
+            filter: blur(20px);
             opacity: 0;
         }
 
@@ -175,6 +176,7 @@ import hoverMenu from './hoverMenu.vue';
             transform: none;
             opacity: 1;
 
+            filter: blur(0px);
 
         }
     }
