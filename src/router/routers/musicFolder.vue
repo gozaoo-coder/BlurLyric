@@ -312,7 +312,7 @@ export default {
                 <button @click="testOnlineSource(source.sourceId)" :disabled="testingSourceId === source.sourceId">
                     {{ testingSourceId === source.sourceId ? '测试中...' : '测试连接' }}
                 </button>
-                <button @click="removeOnlineSource(source.sourceId)" class="danger">删除</button>
+                <button v-if="source.sourceId !== 'local'" @click="removeOnlineSource(source.sourceId)" class="danger">删除</button>
             </div>
         </div>
         <p class="tips" v-if="onlineSources.length === 0">当前没有添加在线源，点击上方"添加"按钮添加</p>

@@ -12,10 +12,64 @@
  * - 通过 sourceId 标识用户配置的数据源
  * - 通过 baseUrl 作为 API 源配置
  * - 符合接口规范即可接入
+ * 
+ * 网络请求：
+ * - 所有 HTTP 请求通过 Tauri IPC 由后端代理执行
+ * - 避免 CORS 问题，无需额外配置
  */
 
 import { Source, SOURCE_TYPE } from './base.js';
 import { Trace, TraceDataType, FetchMethodType } from './trace.js';
+import { invoke } from '@tauri-apps/api/core';
+
+// 检测是否在 Tauri 环境中运行
+const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+
+/**
+ * 通过 Tauri IPC 执行 HTTP 请求
+ * @param {string} url - 完整 URL
+ * @param {Object} options - 请求选项
+ * @returns {Promise<any>}
+ */
+async function proxyFetch(url, options = {}) {
+    if (!isTauri) {
+        // 非 Tauri 环境，使用原生 fetch（开发调试用）
+        const response = await fetch(url, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            },
+            ...options
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    }
+
+    // Tauri 环境，通过 IPC 代理请求
+    const request = {
+        url,
+        method: options.method || 'GET',
+        headers: options.headers || {},
+        body: options.body || null,
+        timeout: options.timeout || 30000
+    };
+
+    const response = await invoke('http_request', { request });
+    
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    // 尝试解析 JSON
+    try {
+        return JSON.parse(response.body);
+    } catch {
+        // 如果不是 JSON，返回原始文本
+        return response.body;
+    }
+}
 
 export class ApiSource extends Source {
     /**
@@ -64,26 +118,14 @@ export class ApiSource extends Source {
     // ========== HTTP 请求 ==========
 
     /**
-     * 发送 HTTP 请求
+     * 发送 HTTP 请求（通过 Tauri IPC 代理）
      * @param {string} endpoint - API 端点
      * @param {Object} options - 请求选项
      * @returns {Promise<any>}
      */
     async _fetch(endpoint, options = {}) {
         const url = `${this.baseUrl}${endpoint}`;
-        const response = await fetch(url, {
-            headers: {
-                'Content-Type': 'application/json',
-                ...options.headers
-            },
-            ...options
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        return response.json();
+        return proxyFetch(url, options);
     }
 
     // ========== Trace 创建 ==========

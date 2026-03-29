@@ -45,6 +45,10 @@ use music_deduplicator::{MusicDeduplicator, MergedTrack, deduplicate_tracks};
 mod trace;
 pub use trace::{Trace, TraceDataType, SourceType, StorageType, FetchMethod, ResourceInfo, BaseModel};
 
+// 引入 HTTP 代理模块
+mod http_proxy;
+pub use http_proxy::{HttpRequest, HttpResponse, http_request, http_get, http_post};
+
 // 已在上面引入 resource_cache 模块
 // 引入统一数据模型模块（内部使用，不在此导出以避免与现有结构体冲突）
 mod models;
@@ -1670,6 +1674,10 @@ pub fn run() {
             resource_cache::cleanup_temp_resource_cache,
             resource_cache::set_resource_cache_pool_sizes,
             resource_cache::read_cached_file,
+            // HTTP 代理命令
+            http_proxy::http_request,
+            http_proxy::http_get,
+            http_proxy::http_post,
         ])
         .setup(|_app| {
             Ok(())
