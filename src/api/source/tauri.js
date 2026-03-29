@@ -623,9 +623,7 @@ export class TauriSource extends Source {
     }
 }
 
-// 向后兼容：默认导出实例
+// 创建默认实例
 const tauriSource = new TauriSource();
 
-// 也导出类以便创建新实例
-export { TauriSource };
 export default tauriSource;
