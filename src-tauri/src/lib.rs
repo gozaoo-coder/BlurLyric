@@ -21,9 +21,13 @@ use image_processor::IMAGE_PROCESSOR;
 mod gpu_image_processor;
 use gpu_image_processor::{init_gpu_processor, resize_with_gpu_fallback};
 
-// 引入缓存管理模块
-mod cache_manager;
-use cache_manager::{CacheManager, CachedSongMetadata, MusicLibraryCache};
+// 引入音乐库缓存模块（本地音乐元数据缓存）
+mod music_library_cache;
+use music_library_cache::{MusicLibraryCache as LibraryCacheManager, CachedSongMetadata, MusicLibraryCacheData};
+
+// 引入资源缓存模块（网络资源缓存）
+mod resource_cache;
+use resource_cache::{ResourceCacheManager, ResourcePoolType, CachedResource, ResourceCacheInfo, ResourcePoolStats};
 
 // 引入增量扫描模块
 mod incremental_scanner;
@@ -39,9 +43,9 @@ use music_deduplicator::{MusicDeduplicator, MergedTrack, deduplicate_tracks};
 
 // 引入 Trace 来源追踪模块
 mod trace;
-// 仅导出 Trace 相关类型，不导出与现有代码冲突的类型
 pub use trace::{Trace, TraceDataType, SourceType, StorageType, FetchMethod, ResourceInfo, BaseModel};
 
+// 已在上面引入 resource_cache 模块
 // 引入统一数据模型模块（内部使用，不在此导出以避免与现有结构体冲突）
 mod models;
 
@@ -852,17 +856,22 @@ fn init_application() {
     PerformanceMonitor::start_timer("init_application");
     println!("Initializing application with optimized resource management...");
 
-    // 1. 初始化缓存管理器
-    if let Err(e) = CacheManager::init() {
-        eprintln!("Failed to initialize cache manager: {}", e);
+    // 1. 初始化音乐库缓存管理器
+    if let Err(e) = LibraryCacheManager::init() {
+        eprintln!("Failed to initialize music library cache: {}", e);
     }
 
-    // 2. 加载音乐目录
+    // 2. 初始化资源缓存管理器
+    if let Err(e) = ResourceCacheManager::init() {
+        eprintln!("Failed to initialize resource cache: {}", e);
+    }
+
+    // 3. 加载音乐目录
     if let Err(e) = load_music_dirs_from_disk() {
         eprintln!("Failed to load music directories from disk: {}", e);
     }
 
-    // 3. 尝试从缓存加载数据（快速启动）
+    // 4. 尝试从缓存加载数据（快速启动）
     let cache_loaded = load_from_persistent_cache();
     
     if !cache_loaded {
@@ -891,7 +900,7 @@ fn init_application() {
 
 // 从持久化缓存加载数据
 fn load_from_persistent_cache() -> bool {
-    if let Some(manager_guard) = CacheManager::instance() {
+    if let Some(manager_guard) = LibraryCacheManager::instance() {
         if let Some(manager) = manager_guard.as_ref() {
             match manager.load_from_disk() {
                 Ok(cache) => {
@@ -914,7 +923,7 @@ fn load_from_persistent_cache() -> bool {
 }
 
 // 从持久化缓存重建内存缓存
-fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCache) {
+fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
     // 重置计数器
     let max_song_id = cache.songs.iter().map(|s| s.id).max().unwrap_or(0);
     let max_artist_id = cache.artists.iter().map(|a| a.id).max().unwrap_or(0);
@@ -1078,7 +1087,7 @@ fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCache) {
 
 // 保存到持久化缓存
 fn save_to_persistent_cache() {
-    if let Some(manager_guard) = CacheManager::instance() {
+    if let Some(manager_guard) = LibraryCacheManager::instance() {
         if let Some(manager) = manager_guard.as_ref() {
             // 从内存缓存构建持久化缓存
             let cache = build_persistent_cache_from_memory();
@@ -1094,11 +1103,11 @@ fn save_to_persistent_cache() {
 }
 
 // 从内存缓存构建持久化缓存
-fn build_persistent_cache_from_memory() -> MusicLibraryCache {
-    use cache_manager::{CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint};
+fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
+    use music_library_cache::{CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint};
     use std::time::{SystemTime, UNIX_EPOCH};
     
-    let mut cache = MusicLibraryCache::new();
+    let mut cache = MusicLibraryCacheData::new();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -1195,14 +1204,14 @@ fn perform_background_incremental_scan() {
         // 执行增量扫描
         let music_dirs = get_music_dirs();
         
-        let existing_cache = if let Some(manager_guard) = CacheManager::instance() {
+        let existing_cache = if let Some(manager_guard) = LibraryCacheManager::instance() {
             if let Some(manager) = manager_guard.as_ref() {
-                manager.load_from_disk().unwrap_or_else(|_| MusicLibraryCache::new())
+                manager.load_from_disk().unwrap_or_else(|_| MusicLibraryCacheData::new())
             } else {
-                MusicLibraryCache::new()
+                MusicLibraryCacheData::new()
             }
         } else {
-            MusicLibraryCache::new()
+            MusicLibraryCacheData::new()
         };
         
         let max_song_id = existing_cache.songs.iter().map(|s| s.id).max().unwrap_or(0);
@@ -1223,7 +1232,7 @@ fn perform_background_incremental_scan() {
                     );
                     
                     // 保存新缓存
-                    if let Some(manager_guard) = CacheManager::instance() {
+                    if let Some(manager_guard) = LibraryCacheManager::instance() {
                         if let Some(manager) = manager_guard.as_ref() {
                             let _ = manager.save_to_disk(&new_cache);
                             manager.update_memory_cache(new_cache);
@@ -1232,7 +1241,7 @@ fn perform_background_incremental_scan() {
                     
                     // 更新内存缓存
                     rebuild_memory_cache_from_persistent(
-                        &CacheManager::instance().unwrap().as_ref().unwrap()
+                        &LibraryCacheManager::instance().unwrap().as_ref().unwrap()
                             .load_from_disk().unwrap()
                     );
                 } else {
@@ -1605,7 +1614,8 @@ fn close_app(window: tauri::Window) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 初始化缓存管理器
-    let _ = CacheManager::init();
+    let _ = LibraryCacheManager::init();
+    let _ = ResourceCacheManager::init();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -1632,10 +1642,10 @@ pub fn run() {
             get_cache_size_info,
             clear_image_cache,
             reset_all_data,
-            // 缓存管理命令
-            cache_manager::get_cache_stats,
-            cache_manager::clear_music_cache,
-            cache_manager::is_cache_valid,
+            // 音乐库缓存命令
+            music_library_cache::get_library_cache_stats,
+            music_library_cache::clear_library_cache,
+            music_library_cache::is_library_cache_valid,
             // 增量扫描命令
             incremental_scanner::perform_incremental_scan,
             incremental_scanner::perform_full_scan,
@@ -1646,6 +1656,17 @@ pub fn run() {
             performance_monitor::record_resource_load,
             performance_monitor::start_performance_timer,
             performance_monitor::end_performance_timer,
+            // 资源缓存命令
+            resource_cache::cache_resource,
+            resource_cache::move_resource_to_preference_pool,
+            resource_cache::remove_resource_from_preference_pool,
+            resource_cache::get_resource_cache_info,
+            resource_cache::clear_temp_resource_cache,
+            resource_cache::clear_preference_resource_cache,
+            resource_cache::is_resource_cached,
+            resource_cache::get_cached_resource_path,
+            resource_cache::cleanup_temp_resource_cache,
+            resource_cache::set_resource_cache_pool_sizes,
         ])
         .setup(|_app| {
             Ok(())

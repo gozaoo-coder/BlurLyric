@@ -31,6 +31,17 @@ impl Default for TraceDataType {
     }
 }
 
+impl TraceDataType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TraceDataType::Track => "Track",
+            TraceDataType::Artist => "Artist",
+            TraceDataType::Album => "Album",
+            TraceDataType::Playlist => "Playlist",
+        }
+    }
+}
+
 /// 存储型来源
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

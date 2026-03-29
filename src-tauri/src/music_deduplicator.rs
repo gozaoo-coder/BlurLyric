@@ -4,7 +4,7 @@
  * 提供音乐去重、音质评分和合并功能
  */
 
-use crate::cache_manager::{CachedSongMetadata, TrackSource};
+use crate::music_library_cache::{CachedSongMetadata, TrackSource};
 use crate::music_tag::AudioFormat;
 use std::collections::HashMap;
 use std::path::Path;
@@ -214,7 +214,7 @@ pub struct MergedTrack {
     pub comment: Option<String>,
     pub composer: Option<String>,
     pub lyricist: Option<String>,
-    pub fingerprint: crate::cache_manager::FileFingerprint,
+    pub fingerprint: crate::music_library_cache::FileFingerprint,
     pub cached_at: u64,
     pub sources: Vec<TrackSource>,
 }

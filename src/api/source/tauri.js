@@ -290,27 +290,27 @@ export class TauriSource extends Source {
     }
     
     /**
-     * 获取缓存统计信息
+     * 获取音乐库缓存统计信息
      */
-    async getCacheStats() {
+    async getLibraryCacheStats() {
         try {
-            return await invoke('get_cache_stats');
+            return await invoke('get_library_cache_stats');
         } catch (e) {
-            console.error('Failed to get cache stats:', e);
+            console.error('Failed to get library cache stats:', e);
             return null;
         }
     }
     
     /**
-     * 清除所有缓存
+     * 清除音乐库缓存
      */
-    async clearCache() {
+    async clearLibraryCache() {
         try {
-            await invoke('clear_music_cache');
+            await invoke('clear_library_cache');
             lazyLoader.clearCache();
-            console.log('Cache cleared successfully');
+            console.log('Library cache cleared successfully');
         } catch (e) {
-            console.error('Failed to clear cache:', e);
+            console.error('Failed to clear library cache:', e);
             throw e;
         }
     }

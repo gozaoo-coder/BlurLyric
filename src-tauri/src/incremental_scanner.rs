@@ -5,7 +5,7 @@
  * 大幅提升启动速度和后续更新速度
  */
 
-use crate::cache_manager::{CacheManager, CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint, MusicLibraryCache};
+use crate::music_library_cache::{MusicLibraryCache as LibraryCacheManager, CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint, MusicLibraryCacheData};
 use crate::music_tag::MetadataParser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -64,7 +64,7 @@ impl IncrementalScanner {
     pub fn scan_incremental(
         &self,
         music_dirs: &[PathBuf],
-        existing_cache: &MusicLibraryCache,
+        existing_cache: &MusicLibraryCacheData,
     ) -> Result<ScanResult, String> {
         let start_time = Instant::now();
         let mut result = ScanResult::new();
@@ -278,9 +278,9 @@ impl IncrementalScanner {
 /// 从扫描结果构建完整的缓存
 pub fn build_cache_from_scan(
     scan_result: ScanResult,
-    existing_cache: Option<&MusicLibraryCache>,
-) -> MusicLibraryCache {
-    let mut cache = MusicLibraryCache::new();
+    existing_cache: Option<&MusicLibraryCacheData>,
+) -> MusicLibraryCacheData {
+    let mut cache = MusicLibraryCacheData::new();
     
     // 合并所有歌曲
     let mut all_songs = scan_result.unchanged;
@@ -399,14 +399,14 @@ pub fn perform_incremental_scan() -> Result<ScanResultSummary, String> {
     let music_dirs = crate::get_music_dirs();
     
     // 获取现有缓存
-    let existing_cache = if let Some(manager_guard) = CacheManager::instance() {
+    let existing_cache = if let Some(manager_guard) = LibraryCacheManager::instance() {
         if let Some(manager) = manager_guard.as_ref() {
-            manager.load_from_disk().unwrap_or_else(|_| MusicLibraryCache::new())
+            manager.load_from_disk().unwrap_or_else(|_| MusicLibraryCacheData::new())
         } else {
-            MusicLibraryCache::new()
+            MusicLibraryCacheData::new()
         }
     } else {
-        MusicLibraryCache::new()
+        MusicLibraryCacheData::new()
     };
     
     // 确定起始ID
@@ -422,7 +422,7 @@ pub fn perform_incremental_scan() -> Result<ScanResultSummary, String> {
     let new_cache = build_cache_from_scan(scan_result.clone(), Some(&existing_cache));
     
     // 保存到磁盘和内存
-    if let Some(manager_guard) = CacheManager::instance() {
+    if let Some(manager_guard) = LibraryCacheManager::instance() {
         if let Some(manager) = manager_guard.as_ref() {
             manager.save_to_disk(&new_cache)?;
             manager.update_memory_cache(new_cache);
@@ -446,7 +446,7 @@ pub fn perform_full_scan() -> Result<ScanResultSummary, String> {
     let new_cache = build_cache_from_scan(scan_result.clone(), None);
     
     // 保存到磁盘和内存
-    if let Some(manager_guard) = CacheManager::instance() {
+    if let Some(manager_guard) = LibraryCacheManager::instance() {
         if let Some(manager) = manager_guard.as_ref() {
             manager.save_to_disk(&new_cache)?;
             manager.update_memory_cache(new_cache);

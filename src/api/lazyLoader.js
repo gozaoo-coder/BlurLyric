@@ -18,10 +18,10 @@ class LazyLoader {
   
   async init() {
     try {
-      const isValid = await invoke('is_cache_valid');
-      console.log('Cache valid:', isValid);
+      const isValid = await invoke('is_library_cache_valid');
+      console.log('Library cache valid:', isValid);
     } catch (e) {
-      console.warn('Cache status check failed:', e);
+      console.warn('Library cache status check failed:', e);
     }
   }
   

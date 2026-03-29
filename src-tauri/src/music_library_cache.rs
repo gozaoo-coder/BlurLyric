@@ -1,8 +1,34 @@
 /**
- * Cache Manager - 多级缓存管理模块
+ * Music Library Cache - 本地音乐库缓存模块
  * 
- * 提供磁盘缓存和内存缓存的统一管理
- * 支持元数据缓存、文件指纹缓存、增量扫描
+ * ==================== 模块职责 ====================
+ * 
+ * 本模块专门负责本地音乐库的元数据缓存管理：
+ * - 缓存本地音乐文件的元数据（歌曲名、艺人、专辑、时长等）
+ * - 维护文件指纹用于增量扫描
+ * - 管理艺术家和专辑的索引信息
+ * - 加速本地音乐库的加载和展示
+ * 
+ * ==================== 与 ResourceCache 的区别 ====================
+ * 
+ * 本模块（MusicLibraryCache）：
+ *   - 缓存内容：本地音乐文件的元数据
+ *   - 数据来源：本地文件扫描
+ *   - 清理策略：增量扫描时更新
+ *   - 用户交互：无感知，自动管理
+ * 
+ * ResourceCache 模块：
+ *   - 缓存内容：网络下载的音频、图片等资源文件
+ *   - 数据来源：网络下载
+ *   - 清理策略：LRU 自动清理
+ *   - 用户交互：用户可手动管理
+ * 
+ * ==================== 存储位置 ====================
+ * 
+ * 缓存文件存储在系统缓存目录：
+ * - Windows: C:\Users\{用户名}\AppData\Local\com.blurlyric.app\music_library_cache.json
+ * - macOS: ~/Library/Caches/com.blurlyric.app/music_library_cache.json
+ * - Linux: ~/.cache/com.blurlyric.app/music_library_cache.json
  */
 
 use serde::{Deserialize, Serialize};
@@ -174,9 +200,9 @@ pub struct CachedAlbum {
     pub pic_url: String,
 }
 
-/// 音乐库缓存数据
+/// 音乐库缓存数据结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MusicLibraryCache {
+pub struct MusicLibraryCacheData {
     pub version: u32,
     pub cached_at: u64,
     pub songs: Vec<CachedSongMetadata>,
@@ -187,9 +213,9 @@ pub struct MusicLibraryCache {
     pub album_songs_map: HashMap<u32, Vec<u32>>, // album_id -> song_ids
 }
 
-impl MusicLibraryCache {
+impl MusicLibraryCacheData {
     pub fn new() -> Self {
-        MusicLibraryCache {
+        MusicLibraryCacheData {
             version: 1,
             cached_at: current_timestamp(),
             songs: Vec::new(),
@@ -245,21 +271,21 @@ impl MusicLibraryCache {
     }
 }
 
-/// 缓存管理器
-pub struct CacheManager {
+/// 音乐库缓存管理器
+pub struct MusicLibraryCache {
     cache_dir: PathBuf,
-    memory_cache: Mutex<Option<MusicLibraryCache>>,
+    memory_cache: Mutex<Option<MusicLibraryCacheData>>,
 }
 
 lazy_static! {
-    static ref CACHE_MANAGER: Mutex<Option<CacheManager>> = Mutex::new(None);
+    static ref MUSIC_LIBRARY_CACHE: Mutex<Option<MusicLibraryCache>> = Mutex::new(None);
 }
 
-impl CacheManager {
+impl MusicLibraryCache {
     /// 初始化缓存管理器
     pub fn init() -> Result<(), String> {
-        let cache_dir = get_cache_dir()?;
-        let manager = CacheManager {
+        let cache_dir = get_library_cache_dir()?;
+        let manager = MusicLibraryCache {
             cache_dir,
             memory_cache: Mutex::new(None),
         };
@@ -269,13 +295,13 @@ impl CacheManager {
             *manager.memory_cache.lock().unwrap() = Some(cache);
         }
         
-        *CACHE_MANAGER.lock().unwrap() = Some(manager);
+        *MUSIC_LIBRARY_CACHE.lock().unwrap() = Some(manager);
         Ok(())
     }
     
     /// 获取缓存管理器实例
-    pub fn instance() -> Option<std::sync::MutexGuard<'static, Option<CacheManager>>> {
-        CACHE_MANAGER.lock().ok()
+    pub fn instance() -> Option<std::sync::MutexGuard<'static, Option<MusicLibraryCache>>> {
+        MUSIC_LIBRARY_CACHE.lock().ok()
     }
     
     /// 获取缓存文件路径
@@ -284,11 +310,11 @@ impl CacheManager {
     }
     
     /// 从磁盘加载缓存
-    pub fn load_from_disk(&self) -> Result<MusicLibraryCache, String> {
+    pub fn load_from_disk(&self) -> Result<MusicLibraryCacheData, String> {
         let cache_file = self.get_cache_file_path();
         
         if !cache_file.exists() {
-            return Ok(MusicLibraryCache::new());
+            return Ok(MusicLibraryCacheData::new());
         }
         
         let mut file = fs::File::open(&cache_file)
@@ -298,14 +324,14 @@ impl CacheManager {
         file.read_to_string(&mut contents)
             .map_err(|e| format!("Failed to read cache file: {}", e))?;
         
-        let cache: MusicLibraryCache = serde_json::from_str(&contents)
+        let cache: MusicLibraryCacheData = serde_json::from_str(&contents)
             .map_err(|e| format!("Failed to parse cache: {}", e))?;
         
         Ok(cache)
     }
     
     /// 保存缓存到磁盘
-    pub fn save_to_disk(&self, cache: &MusicLibraryCache) -> Result<(), String> {
+    pub fn save_to_disk(&self, cache: &MusicLibraryCacheData) -> Result<(), String> {
         let cache_file = self.get_cache_file_path();
         
         // 确保目录存在
@@ -327,12 +353,12 @@ impl CacheManager {
     }
     
     /// 获取内存缓存
-    pub fn get_memory_cache(&self) -> Option<MusicLibraryCache> {
+    pub fn get_memory_cache(&self) -> Option<MusicLibraryCacheData> {
         self.memory_cache.lock().unwrap().clone()
     }
     
     /// 更新内存缓存
-    pub fn update_memory_cache(&self, cache: MusicLibraryCache) {
+    pub fn update_memory_cache(&self, cache: MusicLibraryCacheData) {
         *self.memory_cache.lock().unwrap() = Some(cache);
     }
     
@@ -350,10 +376,10 @@ impl CacheManager {
     }
     
     /// 获取缓存统计信息
-    pub fn get_cache_stats(&self) -> Result<CacheStats, String> {
+    pub fn get_cache_stats(&self) -> Result<LibraryCacheStats, String> {
         let cache = self.load_from_disk()?;
         
-        Ok(CacheStats {
+        Ok(LibraryCacheStats {
             total_songs: cache.songs.len(),
             total_artists: cache.artists.len(),
             total_albums: cache.albums.len(),
@@ -364,9 +390,9 @@ impl CacheManager {
     }
 }
 
-/// 缓存统计信息
+/// 音乐库缓存统计信息
 #[derive(Debug, Clone, Serialize)]
-pub struct CacheStats {
+pub struct LibraryCacheStats {
     pub total_songs: usize,
     pub total_artists: usize,
     pub total_albums: usize,
@@ -375,8 +401,8 @@ pub struct CacheStats {
     pub last_updated: u64,
 }
 
-/// 获取缓存目录
-fn get_cache_dir() -> Result<PathBuf, String> {
+/// 获取音乐库缓存目录
+fn get_library_cache_dir() -> Result<PathBuf, String> {
     let path = dirs::cache_dir().ok_or("Cannot get cache directory")?;
     let mut path = path;
     path.push("com.blurlyric.app");
@@ -394,35 +420,70 @@ fn current_timestamp() -> u64 {
         .as_secs()
 }
 
-/// Tauri命令：获取缓存统计
+// ========== Tauri IPC 命令 ==========
+
+/// 获取音乐库缓存统计
 #[tauri::command]
-pub fn get_cache_stats() -> Result<CacheStats, String> {
-    if let Some(manager_guard) = CacheManager::instance() {
+pub fn get_library_cache_stats() -> Result<LibraryCacheStats, String> {
+    if let Some(manager_guard) = MusicLibraryCache::instance() {
         if let Some(manager) = manager_guard.as_ref() {
             return manager.get_cache_stats();
         }
     }
-    Err("Cache manager not initialized".to_string())
+    Err("Music library cache not initialized".to_string())
 }
 
-/// Tauri命令：清除缓存
+/// 清除音乐库缓存
 #[tauri::command]
-pub fn clear_music_cache() -> Result<(), String> {
-    if let Some(manager_guard) = CacheManager::instance() {
+pub fn clear_library_cache() -> Result<(), String> {
+    if let Some(manager_guard) = MusicLibraryCache::instance() {
         if let Some(manager) = manager_guard.as_ref() {
             return manager.clear_cache();
         }
     }
-    Err("Cache manager not initialized".to_string())
+    Err("Music library cache not initialized".to_string())
 }
 
-/// Tauri命令：检查缓存是否有效
+/// 检查音乐库缓存是否有效
 #[tauri::command]
-pub fn is_cache_valid() -> bool {
-    if let Some(manager_guard) = CacheManager::instance() {
+pub fn is_library_cache_valid() -> bool {
+    if let Some(manager_guard) = MusicLibraryCache::instance() {
         if let Some(manager) = manager_guard.as_ref() {
             return manager.get_memory_cache().is_some();
         }
     }
     false
+}
+
+// ========== 向后兼容的别名（将在未来版本移除） ==========
+
+/// @deprecated 使用 FileFingerprint 代替
+pub type CacheManagerFileFingerprint = FileFingerprint;
+
+/// @deprecated 使用 TrackSource 代替
+pub type CacheManagerTrackSource = TrackSource;
+
+/// @deprecated 使用 CachedSongMetadata 代替
+pub type CacheManagerCachedSongMetadata = CachedSongMetadata;
+
+/// @deprecated 使用 CachedArtist 代替  
+pub type CacheManagerCachedArtist = CachedArtist;
+
+/// @deprecated 使用 CachedAlbum 代替
+pub type CacheManagerCachedAlbum = CachedAlbum;
+
+/// @deprecated 使用 MusicLibraryCacheData 代替
+pub type CacheManagerMusicLibraryCache = MusicLibraryCacheData;
+
+/// @deprecated 使用 LibraryCacheStats 代替
+pub type CacheStats = LibraryCacheStats;
+
+/// @deprecated 使用 MusicLibraryCache::init() 代替
+pub fn init_cache_manager() -> Result<(), String> {
+    MusicLibraryCache::init()
+}
+
+/// @deprecated 使用 MusicLibraryCache::instance() 代替
+pub fn get_cache_manager_instance() -> Option<std::sync::MutexGuard<'static, Option<MusicLibraryCache>>> {
+    MusicLibraryCache::instance()
 }

@@ -31,6 +31,10 @@ import {
     MusicFileResource
 } from './resources/index.js';
 
+// 导入缓存模块
+import LibraryCache from './libraryCache.js';
+import ResourceCache from './resourceCache.js';
+
 // 导出所有 API 相关模块
 export { 
     // Source 管理
@@ -56,7 +60,11 @@ export {
     Resource,
     ResourcePool,
     AlbumCoverResource,
-    MusicFileResource
+    MusicFileResource,
+    
+    // 缓存模块
+    LibraryCache,
+    ResourceCache
 };
 
 // 默认导出 manager 实例
