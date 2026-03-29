@@ -139,7 +139,7 @@
         from {
             transform: scale(.7) translate( -10px ,calc(-50% - 10px));
             opacity: 0;
-            filter: blur(20px);
+            filter: blur(6px);
         }
 
         to {
