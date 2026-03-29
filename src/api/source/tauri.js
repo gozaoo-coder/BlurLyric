@@ -1,15 +1,17 @@
 /**
- * Tauri Source - Tauri后端API源实现
- * 继承Source基类，实现Tauri后端的所有API接口
+ * Tauri Source - Tauri 后端 API 源实现
+ * 继承 Source 基类，实现 Tauri 后端的所有 API 接口
  * 
  * 优化特性：
  * - 多级缓存策略（内存+磁盘）
  * - 增量扫描支持
  * - 按需加载机制
  * - 性能监控集成
+ * - Trace 来源追踪支持
  */
 
-import { Source } from './base.js';
+import { Source, SOURCE_TYPE } from './base.js';
+import { Trace, TraceDataType, FetchMethodType } from './trace.js';
 import { invoke } from '@tauri-apps/api/core';
 import lazyLoader from '../lazyLoader.js';
 import { performanceMonitor } from '../performanceMonitor.js';
@@ -133,8 +135,8 @@ const validateResolution = (resolution) => {
 };
 
 export class TauriSource extends Source {
-    constructor(name = '本地音乐库', type = 'tauri') {
-        super(name, type);
+    constructor() {
+        super('local', '本地音乐库', 'tauri', SOURCE_TYPE.STORAGE);
         this.resolutions = RESOLUTIONS;
         this.lazyLoader = lazyLoader;
         this.performanceMonitor = performanceMonitor;
@@ -153,6 +155,47 @@ export class TauriSource extends Source {
             listeners = onCacheUpdateListeners.get(path);
         }
         onCacheUpdateListeners.set(path, [...listeners, callback]);
+    }
+
+    // ========== Trace 创建 ==========
+
+    /**
+     * 为歌曲创建 Trace
+     * @param {Object} song - 歌曲数据
+     * @returns {Trace}
+     */
+    createTrackTrace(song) {
+        return this.createLocalTrace(
+            TraceDataType.TRACK,
+            String(song.id),
+            song.src || song.path || ''
+        );
+    }
+
+    /**
+     * 为专辑创建 Trace
+     * @param {Object} album - 专辑数据
+     * @returns {Trace}
+     */
+    createAlbumTrace(album) {
+        return this.createLocalTrace(
+            TraceDataType.ALBUM,
+            String(album.id),
+            '' // 专辑没有单独的文件路径
+        );
+    }
+
+    /**
+     * 为艺术家创建 Trace
+     * @param {Object} artist - 艺术家数据
+     * @returns {Trace}
+     */
+    createArtistTrace(artist) {
+        return this.createLocalTrace(
+            TraceDataType.ARTIST,
+            String(artist.id),
+            '' // 艺术家没有单独的文件路径
+        );
     }
 
     // ========== 音乐列表操作 ==========
@@ -335,6 +378,17 @@ export class TauriSource extends Source {
         return await invoke("get_albums_songs_by_id", { albumId: Number(albumId) });
     }
 
+    async getAlbumDetail(albumId) {
+        const album = await this.getAlbumById(albumId);
+        const songs = await this.getAlbumsSongsById(albumId);
+        
+        return {
+            ...album,
+            tracks: songs,
+            traces: [this.createAlbumTrace(album)]
+        };
+    }
+
     // ========== 艺术家操作 ==========
 
     async getArtists() {
@@ -351,6 +405,17 @@ export class TauriSource extends Source {
         return await invoke("get_artists_songs_by_id", { artistId: Number(artistId) });
     }
 
+    async getArtistDetail(artistId) {
+        const artist = await this.getArtistById(artistId);
+        const songs = await this.getArtistsSongsById(artistId);
+        
+        return {
+            ...artist,
+            tracks: songs,
+            traces: [this.createArtistTrace(artist)]
+        };
+    }
+
     // ========== 资源获取（按需加载）==========
 
     /**
@@ -363,7 +428,7 @@ export class TauriSource extends Source {
 
         const resolution = validateResolution(maxResolution);
         
-        // 如果是origin或0，返回原图
+        // 如果是 origin 或 0，返回原图
         if (resolution === RESOLUTIONS.ORIGIN || resolution === 0) {
             return await this.getOriginAlbumCover(albumId);
         }
@@ -408,10 +473,24 @@ export class TauriSource extends Source {
         }
     }
 
+    /**
+     * 根据 Trace 获取资源
+     * @param {Trace} trace - 来源追踪信息
+     * @returns {Promise<{objectURL: string, destroyObjectURL: Function}>}
+     */
+    async getByTrace(trace) {
+        if (trace.dataType === TraceDataType.TRACK) {
+            return this.getMusicFile(parseInt(trace.dataId));
+        } else if (trace.dataType === TraceDataType.ALBUM) {
+            return this.getAlbumCover(parseInt(trace.dataId));
+        }
+        throw new Error(`Unsupported trace data type: ${trace.dataType}`);
+    }
+
     // ========== 搜索功能 ==========
 
     async searchTracks(keyword, options = {}) {
-        // 本地搜索：从musicList中过滤
+        // 本地搜索：从 musicList 中过滤
         const musicList = appLocalDataCache.musicList.data;
         const lowerKeyword = keyword.toLowerCase();
         
@@ -442,7 +521,7 @@ export class TauriSource extends Source {
     }
 
     async searchLyrics(keyword, options = {}) {
-        // 本地搜索歌词：从musicList中过滤包含歌词的歌曲
+        // 本地搜索歌词：从 musicList 中过滤包含歌词的歌曲
         const musicList = appLocalDataCache.musicList.data;
         const lowerKeyword = keyword.toLowerCase();
         
@@ -464,6 +543,22 @@ export class TauriSource extends Source {
         return { tracks, albums, artists, lyrics };
     }
 
+    // ========== 歌曲详情（含 Trace）==========
+
+    async getTrackDetail(trackId) {
+        const musicList = appLocalDataCache.musicList.data;
+        const track = musicList.find(t => String(t.id) === String(trackId));
+        
+        if (!track) {
+            throw new Error(`Track not found: ${trackId}`);
+        }
+        
+        return {
+            ...track,
+            traces: [this.createTrackTrace(track)]
+        };
+    }
+
     // ========== 初始化 ==========
 
     async initApplication() {
@@ -473,7 +568,7 @@ export class TauriSource extends Source {
 
     async isAvailable() {
         try {
-            // 检查Tauri API是否可用
+            // 检查 Tauri API 是否可用
             return typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined;
         } catch {
             return false;
@@ -528,4 +623,9 @@ export class TauriSource extends Source {
     }
 }
 
-export default TauriSource;
+// 向后兼容：默认导出实例
+const tauriSource = new TauriSource();
+
+// 也导出类以便创建新实例
+export { TauriSource };
+export default tauriSource;

@@ -37,6 +37,14 @@ use performance_monitor::{PerformanceMonitor, MetricType};
 mod music_deduplicator;
 use music_deduplicator::{MusicDeduplicator, MergedTrack, deduplicate_tracks};
 
+// 引入 Trace 来源追踪模块
+mod trace;
+// 仅导出 Trace 相关类型，不导出与现有代码冲突的类型
+pub use trace::{Trace, TraceDataType, SourceType, StorageType, FetchMethod, ResourceInfo, BaseModel};
+
+// 引入统一数据模型模块（内部使用，不在此导出以避免与现有结构体冲突）
+mod models;
+
 lazy_static! {
     // ID 计数器
     static ref SONG_ID_COUNTER: Mutex<u32> = Mutex::new(0);

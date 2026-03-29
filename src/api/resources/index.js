@@ -1,8 +1,18 @@
 /**
  * Resource Manager - 资源管理模块
  * 提供大文件资源（专辑图片、音乐文件）的获取、管理与释放
+ * 
+ * 新特性：
+ * - 支持 Trace 来源追踪
+ * - 统一的数据模型
  */
 
+import { Trace, TraceDataType } from '../source/trace.js';
+
+/**
+ * Resource - 资源基类
+ * 实现引用计数和自动释放
+ */
 class Resource {
     #id;
     #objectURL;
@@ -52,6 +62,10 @@ class Resource {
     }
 }
 
+/**
+ * ResourcePool - 资源池
+ * 实现 LRU 淘汰策略
+ */
 class ResourcePool {
     #resources = new Map();
     #maxSize;
@@ -101,6 +115,9 @@ class ResourcePool {
     }
 }
 
+/**
+ * AlbumCoverResource - 专辑封面资源
+ */
 export class AlbumCoverResource {
     #albumId;
     #resolution;
@@ -173,6 +190,9 @@ export class AlbumCoverResource {
     }
 }
 
+/**
+ * MusicFileResource - 音乐文件资源
+ */
 export class MusicFileResource {
     #songId;
     #resource;
@@ -239,20 +259,41 @@ export class MusicFileResource {
     }
 }
 
+/**
+ * Track - 单曲数据模型
+ * 支持 Trace 来源追踪
+ */
 export class Track {
     #data;
     #albumCover;
     #musicFile;
+    #traces;
 
     constructor(trackData) {
         this.#data = trackData;
         this.#albumCover = null;
         this.#musicFile = null;
+        // 解析 Trace 数据
+        this.#traces = (trackData.traces || []).map(t => 
+            t instanceof Trace ? t : Trace.fromRaw(t)
+        );
     }
 
+    /**
+     * 从原始数据创建 Track
+     */
     static fromRaw(rawData) {
         return new Track(rawData);
     }
+
+    /**
+     * 从原始数据数组创建 Track 数组
+     */
+    static fromRawArray(rawArray) {
+        return rawArray.map(raw => Track.fromRaw(raw));
+    }
+
+    // ========== 基本属性 ==========
 
     get id() {
         return this.#data.id;
@@ -282,7 +323,8 @@ export class Track {
         return this.#data.al ? Album.fromRaw(this.#data.al) : null;
     }
 
-    // 新增字段访问器
+    // ========== 扩展属性 ==========
+
     get duration() {
         return this.#data.duration ?? null;
     }
@@ -331,7 +373,8 @@ export class Track {
         return this.#data.otherTags ?? this.#data.other_tags ?? {};
     }
 
-    // 去重合并相关字段
+    // ========== 多来源属性 ==========
+
     get sources() {
         return this.#data.sources ?? [];
     }
@@ -360,6 +403,34 @@ export class Track {
         return this.sourceCount > 1;
     }
 
+    // ========== Trace 属性 ==========
+
+    /**
+     * 获取所有 Trace
+     * @returns {Trace[]}
+     */
+    get traces() {
+        return this.#traces;
+    }
+
+    /**
+     * 获取主 Trace
+     * @returns {Trace|null}
+     */
+    get primaryTrace() {
+        return this.#traces[0] || null;
+    }
+
+    /**
+     * 检查是否有本地资源
+     * @returns {boolean}
+     */
+    hasLocalResource() {
+        return this.#traces.some(t => t.isLocal());
+    }
+
+    // ========== 资源获取 ==========
+
     async getAlbumCover(apiAdapter, resolution = 368) {
         if (!this.#albumCover) {
             const albumId = this.#data.al?.id ?? -1;
@@ -378,6 +449,19 @@ export class Track {
         return this.#musicFile.load(apiAdapter);
     }
 
+    /**
+     * 根据 Trace 获取资源
+     * @param {Object} sourceManager - 源管理器
+     * @returns {Promise<{objectURL: string, destroyObjectURL: Function}>}
+     */
+    async fetchResourceByTrace(sourceManager) {
+        const trace = this.primaryTrace;
+        if (!trace) {
+            throw new Error('No trace available');
+        }
+        return sourceManager.fetchResourceByTrace(trace);
+    }
+
     releaseResources() {
         if (this.#albumCover) {
             this.#albumCover.destroy();
@@ -392,17 +476,21 @@ export class Track {
     toRaw() {
         return { ...this.#data };
     }
-
-    static fromRawArray(rawArray) {
-        return rawArray.map(raw => Track.fromRaw(raw));
-    }
 }
 
+/**
+ * Artist - 艺术家数据模型
+ * 支持 Trace 来源追踪
+ */
 export class Artist {
     #data;
+    #traces;
 
     constructor(artistData) {
         this.#data = artistData;
+        this.#traces = (artistData.traces || []).map(t => 
+            t instanceof Trace ? t : Trace.fromRaw(t)
+        );
     }
 
     static fromRaw(rawData) {
@@ -421,6 +509,18 @@ export class Artist {
         return this.#data.alias ?? [];
     }
 
+    get avatarUrl() {
+        return this.#data.avatarUrl ?? this.#data.picUrl ?? null;
+    }
+
+    get traces() {
+        return this.#traces;
+    }
+
+    get primaryTrace() {
+        return this.#traces[0] || null;
+    }
+
     toRaw() {
         return { ...this.#data };
     }
@@ -430,11 +530,19 @@ export class Artist {
     }
 }
 
+/**
+ * Album - 专辑数据模型
+ * 支持 Trace 来源追踪
+ */
 export class Album {
     #data;
+    #traces;
 
     constructor(albumData) {
         this.#data = albumData;
+        this.#traces = (albumData.traces || []).map(t => 
+            t instanceof Trace ? t : Trace.fromRaw(t)
+        );
     }
 
     static fromRaw(rawData) {
@@ -450,7 +558,19 @@ export class Album {
     }
 
     get picUrl() {
-        return this.#data.picUrl ?? this.#data.pic_url ?? '';
+        return this.#data.picUrl ?? this.#data.pic_url ?? this.#data.coverUrl ?? '';
+    }
+
+    get coverUrl() {
+        return this.picUrl;
+    }
+
+    get traces() {
+        return this.#traces;
+    }
+
+    get primaryTrace() {
+        return this.#traces[0] || null;
     }
 
     async getCover(apiAdapter, resolution = 368) {
@@ -467,6 +587,9 @@ export class Album {
     }
 }
 
+/**
+ * TrackList - 歌曲列表
+ */
 export class TrackList {
     #tracks = [];
     #currentIndex = 0;
