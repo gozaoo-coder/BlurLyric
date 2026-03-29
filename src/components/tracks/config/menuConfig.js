@@ -308,7 +308,7 @@ export function createMusicTableMenuItems(params) {
     });
   }
 
-  const primaryTrace = line.primaryTrace?.() || line.traces?.[line.primary_trace_index ?? 0];
+  const primaryTrace = line.primaryTrace || line.traces?.[line.primary_trace_index ?? 0];
   const primarySource = primaryTrace?.resourceInfo || {};
 
   // 主菜单

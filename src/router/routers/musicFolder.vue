@@ -1,7 +1,6 @@
 <script>
 import folder from '../../components/tracks/folder.vue';
-import dialog from '../../components/base/dialog.vue';
-import dialog_vue from '../../components/base/dialog.vue';
+import baseDialog from '../../components/base/dialog.vue';
 import powerTable from '../../components/tracks/powerTable.vue';
 import manager from '../../api/manager';
 import { sourceManager, NeteaseSource } from '../../api/source/index.js';
@@ -25,8 +24,7 @@ export default {
         }
     },
     components: {
-        dialog,
-        dialog_vue,
+        baseDialog,
         powerTable,
         folder
     },
@@ -236,14 +234,14 @@ export default {
                 </template>
             </iconWithText>
         </iconFlexRow>
-        <dialog_vue v-if="askAddLocalDirs == true" :cancel="() => { askAddLocalDirs = false }"
+        <baseDialog v-if="askAddLocalDirs == true" :cancel="() => { askAddLocalDirs = false }"
             :finish="() => { askAddLocalDirs = false; manager.tauri.addMusicDirs(addLocalDirInputValue); manager.tauri.refreshMusicCache(); }">
             <h2>
                 请输入一个地址
             </h2>
             <p class="tips">示例：C:\Users\gozaoo\Music\</p>
             <input style="width: 210px" type="text" placeholder="" v-model="addLocalDirInputValue">
-        </dialog_vue>
+        </baseDialog>
         <folder @del="() => { manager.tauri.removeMusicDirs(item); manager.tauri.refreshMusicCache();  }"
             v-for="(item) in source.local.folders.data">
             <template #name>
@@ -273,7 +271,7 @@ export default {
     </iconFlexRow>
 
     <!-- 添加在线源对话框 -->
-    <dialog_vue v-if="askAddOnlineSource == true" 
+    <baseDialog v-if="askAddOnlineSource == true" 
         :cancel="() => { askAddOnlineSource = false }"
         :finish="addOnlineSource">
         <h2>添加在线音乐源</h2>
@@ -295,7 +293,7 @@ export default {
             </div>
             <p class="tips">支持 NeteaseCloudMusicApiEnhanced 兼容的 API</p>
         </div>
-    </dialog_vue>
+    </baseDialog>
 
     <!-- 在线源列表 -->
     <div class="online-source-list">

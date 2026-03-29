@@ -124,7 +124,10 @@ export class ApiSource extends Source {
      * @returns {Promise<any>}
      */
     async _fetch(endpoint, options = {}) {
-        const url = `${this.baseUrl}${endpoint}`;
+        // 规范化 URL，避免双斜杠问题
+        const baseUrl = this.baseUrl.replace(/\/$/, ''); // 移除末尾的 /
+        const cleanEndpoint = endpoint.replace(/^\//, ''); // 移除开头的 /
+        const url = `${baseUrl}/${cleanEndpoint}`;
         return proxyFetch(url, options);
     }
 

@@ -671,7 +671,6 @@ export default {
         },
         async transitionNextMusic(options = {
             nextIndex: this.getNextMusicIndex()
-
         }) {
             if (this.transitionNextMusicWorking == true) return;
             this.transitionNextMusicWorking = true;
