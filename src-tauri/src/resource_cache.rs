@@ -702,6 +702,19 @@ pub fn set_resource_cache_pool_sizes(temp_size: u64, preference_size: u64) -> Re
     Err("Resource cache manager not initialized".to_string())
 }
 
+/// 读取缓存文件
+/// 用于前端读取已缓存的资源文件
+#[tauri::command]
+pub fn read_cached_file(path: String) -> Result<Vec<u8>, String> {
+    let path = PathBuf::from(&path);
+    
+    if !path.exists() {
+        return Err(format!("Cache file not found: {}", path.display()));
+    }
+    
+    fs::read(&path).map_err(|e| format!("Failed to read cache file: {}", e))
+}
+
 // ========== 向后兼容的类型别名（将在未来版本移除） ==========
 
 /// @deprecated 使用 ResourcePoolType 代替

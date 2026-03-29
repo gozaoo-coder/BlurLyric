@@ -1667,6 +1667,7 @@ pub fn run() {
             resource_cache::get_cached_resource_path,
             resource_cache::cleanup_temp_resource_cache,
             resource_cache::set_resource_cache_pool_sizes,
+            resource_cache::read_cached_file,
         ])
         .setup(|_app| {
             Ok(())

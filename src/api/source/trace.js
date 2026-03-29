@@ -6,6 +6,15 @@
  * 2. 通过 sourceId 标识用户配置的数据源
  * 3. 通过 baseUrl 作为 API 源配置
  * 4. 符合接口规范即可接入
+ * 
+ * ==================== 资源获取流程 ====================
+ * 
+ * Trace.fetchResource() 实现统一的资源获取流程：
+ * 1. 检查是否为本地资源（直接返回）
+ * 2. 检查缓存是否存在（返回缓存）
+ * 3. 根据 fetchMethod 类型获取远程资源
+ * 4. 将资源存入缓存
+ * 5. 返回 ObjectURL
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -146,30 +155,108 @@ export class Trace {
     // ========== 资源获取 ==========
 
     /**
-     * 获取资源（根据 Trace 类型）
-     * - Track: 获取音频文件
-     * - Album: 获取专辑封面
-     * - Artist: 获取艺人头像
-     * @returns {Promise<{objectURL: string, destroyObjectURL: Function}>}
+     * 获取资源（统一入口，支持缓存）
+     * 自动处理缓存检查、下载和存储
+     * 
+     * @param {Object} options - 选项
+     * @param {boolean} [options.useCache=true] - 是否使用缓存
+     * @param {boolean} [options.forceDownload=false] - 是否强制重新下载
+     * @returns {Promise<{objectURL: string, destroyObjectURL: Function, fromCache: boolean}>}
      */
-    async fetchResource() {
+    async fetchResource(options = {}) {
+        const { useCache = true, forceDownload = false } = options;
         const method = this.#data.fetchMethod;
 
+        // 1. 本地文件直接获取
+        if (method.type === FetchMethodType.LOCAL_FILE) {
+            return await this.fetchLocalFile(method.params.path);
+        }
+
+        // 2. 流式资源直接返回 URL
+        if (method.type === FetchMethodType.STREAM) {
+            return {
+                objectURL: method.params.url,
+                destroyObjectURL: () => { },
+                fromCache: false
+            };
+        }
+
+        // 3. 检查缓存（如果启用）
+        if (useCache && !forceDownload) {
+            const cachedResult = await this.#tryGetFromCache();
+            if (cachedResult) {
+                return cachedResult;
+            }
+        }
+
+        // 4. 从远程获取资源
+        let result;
         switch (method.type) {
-            case FetchMethodType.LOCAL_FILE:
-                return await this.fetchLocalFile(method.params.path);
             case FetchMethodType.DOWNLOAD:
-                return await this.downloadResource(method.params.url, method.params.format);
+                result = await this.downloadResource(method.params.url, method.params.format);
+                break;
             case FetchMethodType.API_CALL:
-                return await this.fetchViaApi(method.params.endpoint, method.params.params);
-            case FetchMethodType.STREAM:
-                // 流式播放直接返回 URL
-                return {
-                    objectURL: method.params.url,
-                    destroyObjectURL: () => { }
-                };
+                result = await this.fetchViaApi(method.params.endpoint, method.params.params);
+                break;
             default:
                 throw new Error(`Unknown fetch method: ${method.type}`);
+        }
+
+        // 5. 存入缓存（如果启用）
+        if (useCache && result.data) {
+            await this.#storeInCache(result.data, result.format || 'mp3');
+        }
+
+        return {
+            objectURL: result.objectURL,
+            destroyObjectURL: result.destroyObjectURL,
+            fromCache: false
+        };
+    }
+
+    /**
+     * 尝试从缓存获取资源
+     * @returns {Promise<{objectURL: string, destroyObjectURL: Function, fromCache: boolean}|null>}
+     */
+    async #tryGetFromCache() {
+        try {
+            const cachedPath = await invoke('get_cached_resource_path', {
+                trace: this.toRaw()
+            });
+
+            if (cachedPath) {
+                const result = await invoke('read_cached_file', { path: cachedPath });
+                const blob = new Blob([result]);
+                const objectURL = URL.createObjectURL(blob);
+
+                return {
+                    objectURL,
+                    destroyObjectURL: () => URL.revokeObjectURL(objectURL),
+                    fromCache: true
+                };
+            }
+        } catch (error) {
+            console.warn('Failed to get cached resource:', error);
+        }
+
+        return null;
+    }
+
+    /**
+     * 将资源存入缓存
+     * @param {ArrayBuffer} data - 资源数据
+     * @param {string} format - 资源格式
+     */
+    async #storeInCache(data, format) {
+        try {
+            const dataArray = Array.from(new Uint8Array(data));
+            await invoke('cache_resource', {
+                trace: this.toRaw(),
+                data: dataArray,
+                format
+            });
+        } catch (error) {
+            console.warn('Failed to cache resource:', error);
         }
     }
 
@@ -193,15 +280,18 @@ export class Trace {
      * 下载网络资源
      * @param {string} url - 资源 URL
      * @param {string} format - 格式
-     * @returns {Promise<{objectURL: string, destroyObjectURL: Function}>}
+     * @returns {Promise<{objectURL: string, destroyObjectURL: Function, data: ArrayBuffer, format: string}>}
      */
     async downloadResource(url, format) {
         const response = await fetch(url);
-        const blob = await response.blob();
+        const arrayBuffer = await response.arrayBuffer();
+        const blob = new Blob([arrayBuffer]);
         const objectURL = URL.createObjectURL(blob);
         return {
             objectURL,
-            destroyObjectURL: () => URL.revokeObjectURL(objectURL)
+            destroyObjectURL: () => URL.revokeObjectURL(objectURL),
+            data: arrayBuffer,
+            format: format || 'mp3'
         };
     }
 
@@ -209,7 +299,7 @@ export class Trace {
      * 通过 API 获取资源
      * @param {string} endpoint - API 端点
      * @param {Object} params - 参数
-     * @returns {Promise<{objectURL: string, destroyObjectURL: Function}>}
+     * @returns {Promise<{objectURL: string, destroyObjectURL: Function, data: ArrayBuffer, format: string}>}
      */
     async fetchViaApi(endpoint, params) {
         const url = new URL(endpoint, this.baseUrl);
@@ -218,11 +308,14 @@ export class Trace {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(params)
         });
-        const blob = await response.blob();
+        const arrayBuffer = await response.arrayBuffer();
+        const blob = new Blob([arrayBuffer]);
         const objectURL = URL.createObjectURL(blob);
         return {
             objectURL,
-            destroyObjectURL: () => URL.revokeObjectURL(objectURL)
+            destroyObjectURL: () => URL.revokeObjectURL(objectURL),
+            data: arrayBuffer,
+            format: params.format || 'mp3'
         };
     }
 

@@ -2,10 +2,31 @@
  * Source Manager - API 源管理器
  * 统一管理多个 API 源（本地 Tauri、Web 等）
  * 
- * 新特性：
- * - 支持多源注册和管理
- * - 支持 Trace 导航
- * - 支持按需获取资源
+ * ==================== 核心功能 ====================
+ * 
+ * 1. 多源注册和管理
+ *    - 支持本地 Tauri 源、Web API 源、自定义源
+ *    - 源类型工厂模式，便于扩展
+ * 
+ * 2. Trace 导航
+ *    - 根据 Trace 信息精准跳转到数据源
+ *    - 支持多源数据关联
+ * 
+ * 3. 资源获取（P3-006 实现）
+ *    - 统一的缓存检查流程
+ *    - 自动缓存远程资源
+ *    - 支持预加载和批量预加载
+ * 
+ * ==================== 资源调用流程 ====================
+ * 
+ * fetchResourceByTrace(trace) →
+ *   1. 检查 trace 类型（本地/远程）
+ *   2. 本地资源：直接读取文件
+ *   3. 远程资源：
+ *      a. 检查缓存 → 命中则返回缓存
+ *      b. 未命中则从网络下载
+ *      c. 存入临时缓存池
+ *      d. 返回 ObjectURL
  */
 
 import { Source, SOURCE_TYPE } from './base.js';
@@ -13,6 +34,7 @@ import { Trace, TraceDataType } from './trace.js';
 import { TauriSource } from './tauri.js';
 import { WebSource } from './web.js';
 import { ApiSource } from './api.js';
+import { ResourceFetcher, initResourceFetcher, getResourceFetcher } from '../resourceFetcher.js';
 
 class SourceManager {
     #sources = new Map();
@@ -143,21 +165,64 @@ class SourceManager {
     }
 
     /**
-     * 根据 Trace 获取资源
+     * 根据 Trace 获取资源（统一入口）
+     * 实现完整的缓存策略：
+     * 1. 本地资源直接返回
+     * 2. 远程资源检查缓存
+     * 3. 缓存未命中则下载并缓存
+     * 
      * @param {Trace} trace - 来源追踪信息
-     * @returns {Promise<{objectURL: string, destroyObjectURL: Function}>}
+     * @param {Object} options - 选项
+     * @param {boolean} [options.skipCache=false] - 是否跳过缓存
+     * @param {boolean} [options.forceDownload=false] - 是否强制重新下载
+     * @returns {Promise<{objectURL: string, destroyObjectURL: Function, fromCache: boolean}>}
      */
-    async fetchResourceByTrace(trace) {
-        const source = this.getSource(trace.sourceId);
-        if (!source) {
-            throw new Error(`Source not found: ${trace.sourceId}`);
+    async fetchResourceByTrace(trace, options = {}) {
+        const fetcher = getResourceFetcher(this);
+        if (!fetcher) {
+            initResourceFetcher(this);
         }
+        return await getResourceFetcher(this).fetch(trace, options);
+    }
 
-        if (source.isStorageSource() && source.getByTrace) {
-            return source.getByTrace(trace);
+    /**
+     * 预加载资源（后台下载）
+     * @param {Trace} trace - 来源追踪信息
+     * @returns {Promise<boolean>}
+     */
+    async preloadResource(trace) {
+        const fetcher = getResourceFetcher(this);
+        if (!fetcher) {
+            initResourceFetcher(this);
         }
+        return await getResourceFetcher(this).preload(trace);
+    }
 
-        return await trace.fetchResource();
+    /**
+     * 批量预加载资源
+     * @param {Array<Trace>} traces - Trace 数组
+     * @param {number} [concurrency=3] - 并发数
+     * @returns {Promise<{success: number, failed: number}>}
+     */
+    async preloadResources(traces, concurrency = 3) {
+        const fetcher = getResourceFetcher(this);
+        if (!fetcher) {
+            initResourceFetcher(this);
+        }
+        return await getResourceFetcher(this).preloadBatch(traces, concurrency);
+    }
+
+    /**
+     * 检查资源是否已缓存
+     * @param {Trace} trace - 来源追踪信息
+     * @returns {Promise<boolean>}
+     */
+    async isResourceCached(trace) {
+        const fetcher = getResourceFetcher(this);
+        if (!fetcher) {
+            initResourceFetcher(this);
+        }
+        return await getResourceFetcher(this).isCached(trace);
     }
 
     // ========== 代理方法（兼容旧代码） ==========
@@ -281,5 +346,16 @@ class SourceManager {
 const sourceManager = new SourceManager();
 
 // 导出
-export { sourceManager, SourceManager, Source, SOURCE_TYPE, Trace, TraceDataType, TauriSource, WebSource, ApiSource };
+export { 
+    sourceManager, 
+    SourceManager, 
+    Source, 
+    SOURCE_TYPE, 
+    Trace, 
+    TraceDataType, 
+    TauriSource, 
+    WebSource, 
+    ApiSource,
+    ResourceFetcher
+};
 export default sourceManager;

@@ -2,10 +2,24 @@
  * API Manager - 统一的 API 管理入口
  * 整合 Source 管理和 Resource 管理
  * 
- * 新特性：
- * - 支持多源管理
- * - 支持 Trace 来源追踪
- * - 统一的数据模型
+ * ==================== 核心功能 ====================
+ * 
+ * 1. 多源管理
+ *    - 支持本地 Tauri 源、Web API 源、自定义源
+ *    - 源类型工厂模式，便于扩展
+ * 
+ * 2. Trace 来源追踪
+ *    - 所有数据支持来源追踪
+ *    - 支持多源数据关联
+ * 
+ * 3. 统一的数据模型
+ *    - Track, Artist, Album, TrackList
+ *    - 资源管理和引用计数
+ * 
+ * 4. 资源获取（P3-006 实现）
+ *    - 统一的缓存策略
+ *    - 自动缓存远程资源
+ *    - 支持预加载
  */
 
 import { 
@@ -17,7 +31,8 @@ import {
     TraceDataType,
     TauriSource,
     WebSource,
-    ApiSource
+    ApiSource,
+    ResourceFetcher
 } from './source/index.js';
 
 import { 
@@ -34,6 +49,9 @@ import {
 // 导入缓存模块
 import LibraryCache from './libraryCache.js';
 import ResourceCache from './resourceCache.js';
+
+// 导入资源获取器
+import { getResourceFetcher, initResourceFetcher } from './resourceFetcher.js';
 
 // 导出所有 API 相关模块
 export { 
@@ -64,7 +82,12 @@ export {
     
     // 缓存模块
     LibraryCache,
-    ResourceCache
+    ResourceCache,
+    
+    // 资源获取器
+    ResourceFetcher,
+    getResourceFetcher,
+    initResourceFetcher
 };
 
 // 默认导出 manager 实例
