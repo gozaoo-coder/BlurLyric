@@ -31,100 +31,12 @@ export default {
         refreshConfig() {
             this.localConfig = this.config;
         },
-        loadSources() {
-            // 加载所有已配置的源
-            this.sources = manager.source.getAllSources().map(s => ({
-                ...s.source.getInfo(),
-                instance: s.source
-            }));
-        },
-        addSource() {
-            // 验证输入
-            if (!this.newSource.name) {
-                this.regMessage({
-                    type: 'Alert',
-                    content: '请填写源名称'
-                });
-                return false; // 返回false阻止对话框关闭
-            }
-            
-            if (this.newSource.type === 'web' && !this.newSource.apiUrl) {
-                this.regMessage({
-                    type: 'Alert',
-                    content: '请填写API地址'
-                });
-                return false; // 返回false阻止对话框关闭
-            }
-            
-            try {
-                manager.source.addSource(
-                    this.newSource.name,
-                    this.newSource.type,
-                    { apiUrl: this.newSource.apiUrl }
-                );
-                this.loadSources();
-                this.showAddSourceDialog = false;
-                this.newSource = { name: '', type: 'web', apiUrl: '' };
-                this.regMessage({
-                    type: 'Message',
-                    content: '音乐源添加成功'
-                });
-                return true; // 返回true允许对话框关闭
-            } catch (error) {
-                this.regMessage({
-                    type: 'Alert',
-                    content: '添加失败: ' + error.message
-                });
-                return false; // 返回false阻止对话框关闭
-            }
-        },
-        removeSource(name) {
-            if (confirm(`确定要删除源 "${name}" 吗？`)) {
-                manager.source.removeSource(name);
-                this.loadSources();
-                this.regMessage({
-                    type: 'Message',
-                    content: '音乐源已删除'
-                });
-            }
-        },
-        setDefaultSource(name) {
-            manager.source.setDefaultSource(name);
-            this.loadSources();
-            this.regMessage({
-                type: 'Message',
-                content: `已切换到源: ${name}`
-            });
-        },
-        async testSource(name) {
-            const source = manager.source.getSource(name);
-            if (!source) return;
-            
-            try {
-                const isAvailable = await source.isAvailable();
-                if (isAvailable) {
-                    this.regMessage({
-                        type: 'Message',
-                        content: `源 "${name}" 连接正常`
-                    });
-                } else {
-                    this.regMessage({
-                        type: 'Alert',
-                        content: `源 "${name}" 连接失败`
-                    });
-                }
-            } catch (error) {
-                this.regMessage({
-                    type: 'Alert',
-                    content: `源 "${name}" 测试失败: ${error.message}`
-                });
-            }
-        }
+
     },
     inject: ['config', 'editConfig', 'regMessage'],
     created() {
         this.refreshConfig();
-        this.loadSources();
+        
     },
     watch: {
         config: {
@@ -162,51 +74,7 @@ export default {
             </template>
         </linkLine>
     </tracksRow>
-    
-    <!-- 已配置的源列表 -->
-    <tracksRow v-for="source in sources" :key="source.name">
-        <div class="source-item">
-            <div class="source-info">
-                <i class="bi" :class="source.type === 'tauri' ? 'bi-hdd-fill' : 'bi-globe'"></i>
-                <div class="source-details">
-                    <span class="source-name">{{ source.name }}</span>
-                    <span class="source-type">{{ source.type === 'tauri' ? '本地' : '网络' }}</span>
-                </div>
-                <span v-if="source.name === '本地音乐库'" class="source-badge default">默认</span>
-            </div>
-            <div class="source-actions">
-                <button 
-                    v-if="source.name !== '本地音乐库'" 
-                    @click="setDefaultSource(source.name)"
-                    class="btn btn-sm"
-                >
-                    设为默认
-                </button>
-                <button @click="testSource(source.name)" class="btn btn-sm">
-                    测试
-                </button>
-                <button 
-                    v-if="source.name !== '本地音乐库'" 
-                    @click="removeSource(source.name)"
-                    class="btn btn-sm btn-danger"
-                >
-                    删除
-                </button>
-            </div>
-        </div>
-    </tracksRow>
-    
-    <!-- 添加新源 -->
-    <tracksRow>
-        <linkLine @click="showAddSourceDialog = true">
-            <template #icon>
-                <i class="bi bi-plus-circle-fill"></i>
-            </template>
-            <template #text>
-                添加音乐源
-            </template>
-        </linkLine>
-    </tracksRow>
+
     
     <!-- 添加源对话框 -->
     <dialog_custom v-if="showAddSourceDialog" 

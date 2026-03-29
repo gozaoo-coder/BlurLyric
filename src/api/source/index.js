@@ -34,6 +34,7 @@ import { Trace, TraceDataType } from './trace.js';
 import { TauriSource } from './tauri.js';
 import { WebSource } from './web.js';
 import { ApiSource } from './api.js';
+import { NeteaseSource } from './netease.js';
 import { ResourceFetcher, initResourceFetcher, getResourceFetcher } from '../resourceFetcher.js';
 
 class SourceManager {
@@ -51,6 +52,14 @@ class SourceManager {
         });
         this.registerSourceType('api', (sourceId, sourceName, options) => {
             return new ApiSource(sourceId, sourceName, options.baseUrl);
+        });
+        this.registerSourceType('netease', (sourceId, sourceName, options) => {
+            return new NeteaseSource(
+                sourceId, 
+                sourceName, 
+                options.baseUrl || 'http://localhost:3000',
+                options.config || {}
+            );
         });
 
         // 注册默认本地源
@@ -335,6 +344,134 @@ class SourceManager {
         return source.searchAll(keyword, options);
     }
 
+    // ========== 多源搜索 ==========
+
+    /**
+     * 在所有 API 源中搜索
+     * @param {string} keyword - 搜索关键词
+     * @param {Object} options - 搜索选项
+     * @param {Array<string>} [options.sourceIds] - 指定搜索的源 ID 列表
+     * @param {boolean} [options.includeLocal=false] - 是否包含本地源
+     * @returns {Promise<{tracks: Array, albums: Array, artists: Array, sources: Object}>}
+     */
+    async searchAllSources(keyword, options = {}) {
+        const { sourceIds, includeLocal = false } = options;
+        
+        // 获取要搜索的源
+        let sourcesToSearch = this.#sourceOrder
+            .filter(s => {
+                // 如果指定了源 ID 列表，只搜索指定的源
+                if (sourceIds && sourceIds.length > 0) {
+                    return sourceIds.includes(s.sourceId);
+                }
+                // 否则搜索所有 API 源（可选包含本地源）
+                if (includeLocal) {
+                    return true;
+                }
+                return s.type !== 'tauri'; // 排除本地源
+            })
+            .map(s => s.source);
+
+        // 如果没有可搜索的源，返回空结果
+        if (sourcesToSearch.length === 0) {
+            return { tracks: [], albums: [], artists: [], sources: {} };
+        }
+
+        // 并行搜索所有源
+        const searchPromises = sourcesToSearch.map(async (source) => {
+            try {
+                const result = await source.searchAll(keyword, options);
+                return {
+                    sourceId: source.sourceId,
+                    sourceName: source.sourceName,
+                    result
+                };
+            } catch (e) {
+                console.warn(`Search failed for source ${source.sourceId}:`, e);
+                return {
+                    sourceId: source.sourceId,
+                    sourceName: source.sourceName,
+                    result: { tracks: [], albums: [], artists: [] },
+                    error: e.message
+                };
+            }
+        });
+
+        const results = await Promise.all(searchPromises);
+
+        // 合并结果
+        const mergedResult = {
+            tracks: [],
+            albums: [],
+            artists: [],
+            sources: {}
+        };
+
+        for (const { sourceId, sourceName, result, error } of results) {
+            // 记录每个源的搜索结果
+            mergedResult.sources[sourceId] = {
+                name: sourceName,
+                trackCount: result.tracks?.length || 0,
+                albumCount: result.albums?.length || 0,
+                artistCount: result.artists?.length || 0,
+                error
+            };
+
+            // 合并结果，为每个项目添加来源标识
+            if (result.tracks) {
+                mergedResult.tracks.push(...result.tracks.map(t => ({
+                    ...t,
+                    sourceId,
+                    sourceName
+                })));
+            }
+            if (result.albums) {
+                mergedResult.albums.push(...result.albums.map(a => ({
+                    ...a,
+                    sourceId,
+                    sourceName
+                })));
+            }
+            if (result.artists) {
+                mergedResult.artists.push(...result.artists.map(a => ({
+                    ...a,
+                    sourceId,
+                    sourceName
+                })));
+            }
+        }
+
+        return mergedResult;
+    }
+
+    /**
+     * 获取所有可用的 API 源
+     * @returns {Array<{sourceId: string, sourceName: string, type: string, available: boolean}>}
+     */
+    async getAvailableSources() {
+        const sources = this.getAllSources();
+        const availabilityChecks = sources.map(async ({ sourceId, type, source }) => {
+            let available = false;
+            try {
+                if (source.isAvailable) {
+                    available = await source.isAvailable();
+                } else {
+                    available = true;
+                }
+            } catch {
+                available = false;
+            }
+            return {
+                sourceId,
+                sourceName: source.sourceName,
+                type,
+                available
+            };
+        });
+
+        return await Promise.all(availabilityChecks);
+    }
+
     async initApplication(sourceId = null) {
         const source = sourceId ? this.getSource(sourceId) : this.getDefaultSource();
         if (!source) throw new Error('No source available');
@@ -356,6 +493,7 @@ export {
     TauriSource, 
     WebSource, 
     ApiSource,
+    NeteaseSource,
     ResourceFetcher
 };
 export default sourceManager;

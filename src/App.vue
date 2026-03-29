@@ -902,6 +902,26 @@ export default {
                     </template>
                 </iconWithText>
                 
+                <iconWithText style="width: 100%;" @click="this.$router.push('/allLocalArtist/')"
+                    :type="(leftBarState == 'short') ? 'hidden' : null">
+                    <template #svg>
+                        <i class="bi bi-person-fill"></i>
+                    </template>
+                    <template #text>
+                        本地艺人
+                    </template>
+                </iconWithText>
+                
+                <iconWithText style="width: 100%;" @click="this.$router.push('/allLocalAlbum/')"
+                    :type="(leftBarState == 'short') ? 'hidden' : null">
+                    <template #svg>
+                        <i class="bi bi-disc-fill"></i>
+                    </template>
+                    <template #text>
+                        本地专辑
+                    </template>
+                </iconWithText>
+                
                 <iconWithText style="width: 100%;" @click="this.$router.push('/search/')"
                     :type="(leftBarState == 'short') ? 'hidden' : null">
                     <template #svg>

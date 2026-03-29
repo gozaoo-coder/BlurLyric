@@ -32,6 +32,7 @@ import {
     TauriSource,
     WebSource,
     ApiSource,
+    NeteaseSource,
     ResourceFetcher
 } from './source/index.js';
 
@@ -69,6 +70,7 @@ export {
     TauriSource,
     WebSource,
     ApiSource,
+    NeteaseSource,
     
     // 资源类
     Track, 

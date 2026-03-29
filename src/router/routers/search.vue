@@ -22,6 +22,23 @@
       </button>
     </div>
 
+    <!-- 数据源选择 -->
+    <div v-if="availableSources.length > 0" class="source-selector">
+      <span class="source-label">搜索源：</span>
+      <div class="source-tags">
+        <span
+          v-for="source in availableSources"
+          :key="source.sourceId"
+          :class="['source-tag', { active: selectedSourceIds.includes(source.sourceId), unavailable: !source.available }]"
+          @click="source.available && toggleSourceSelection(source.sourceId)"
+        >
+          <i :class="getSourceIcon(source.type)"></i>
+          {{ source.sourceName }}
+          <span v-if="!source.available" class="unavailable-badge">不可用</span>
+        </span>
+      </div>
+    </div>
+
     <!-- 搜索历史 -->
     <div v-if="searchHistory.length > 0 && !searchKeyword" class="search-history">
       <div class="history-header">
@@ -48,6 +65,17 @@
     <div v-if="isSearching" class="search-loading">
       <i class="bi bi-arrow-repeat spinning"></i>
       <span>搜索中...</span>
+    </div>
+
+    <!-- 搜索结果统计 -->
+    <div v-if="hasResults && Object.keys(searchSources).length > 0" class="search-stats">
+      <span class="stats-title">搜索结果来源：</span>
+      <div class="stats-tags">
+        <span v-for="(info, sourceId) in searchSources" :key="sourceId" class="stats-tag">
+          {{ info.name }}: {{ info.trackCount }} 首
+          <span v-if="info.error" class="error-badge">错误</span>
+        </span>
+      </div>
     </div>
 
     <!-- 搜索结果 - 复用 powerTable_music 组件 -->
@@ -93,7 +121,12 @@ const {
   clearResults,
   loadSearchHistory,
   clearHistory,
-  removeFromHistory
+  removeFromHistory,
+  availableSources,
+  selectedSourceIds,
+  searchSources,
+  loadAvailableSources,
+  toggleSource
 } = useSearch();
 
 // 本地输入状态
@@ -122,9 +155,26 @@ const clearSearch = () => {
   clearResults();
 };
 
-// 组件挂载时加载搜索历史
+// 切换源选择
+const toggleSourceSelection = (sourceId) => {
+  toggleSource(sourceId);
+};
+
+// 获取源图标
+const getSourceIcon = (type) => {
+  const iconMap = {
+    'tauri': 'bi bi-hdd',
+    'web': 'bi bi-globe',
+    'api': 'bi bi-cloud',
+    'netease': 'bi bi-music-note-beamed'
+  };
+  return iconMap[type] || 'bi bi-question-circle';
+};
+
+// 组件挂载时加载搜索历史和可用源
 onMounted(() => {
   loadSearchHistory();
+  loadAvailableSources();
 });
 </script>
 
@@ -330,5 +380,103 @@ onMounted(() => {
 
 .search-error span {
   font-size: 14px;
+}
+
+/* 数据源选择器 */
+.source-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.source-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fontColor-content, #666);
+  white-space: nowrap;
+}
+
+.source-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.source-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background-color: var(--background-color-element, #f5f5f5);
+  border-radius: 16px;
+  font-size: 13px;
+  color: var(--fontColor-content, #666);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.source-tag:hover {
+  background-color: var(--background-color-element-hover, #e8e8e8);
+}
+
+.source-tag.active {
+  background-color: var(--primary-color-light, rgba(0, 122, 255, 0.1));
+  border-color: var(--primary-color, #007aff);
+  color: var(--primary-color, #007aff);
+}
+
+.source-tag.unavailable {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.unavailable-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  background-color: var(--danger-color, #ff6b6b);
+  color: white;
+  border-radius: 8px;
+}
+
+/* 搜索结果统计 */
+.search-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color, #eee);
+}
+
+.stats-title {
+  font-size: 12px;
+  color: var(--fontColor-content-unimportant, #999);
+  white-space: nowrap;
+}
+
+.stats-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stats-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background-color: var(--background-color-element, #f5f5f5);
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--fontColor-content, #666);
+}
+
+.error-badge {
+  font-size: 10px;
+  padding: 2px 4px;
+  background-color: var(--danger-color, #ff6b6b);
+  color: white;
+  border-radius: 6px;
 }
 </style>
