@@ -1397,9 +1397,11 @@ async fn get_music_file(song_id: u32) -> Result<tauri::ipc::Response, String> {
 
 #[tauri::command]
 fn get_all_music_dirs() -> Result<Vec<String>, String> {
-    let cache = MUSIC_CACHE.lock().unwrap();
-    let dirs = cache
-        .keys()
+    // 返回用户手动添加的音乐目录，而不是缓存中的所有目录
+    // 这样可以避免子目录被显示为独立的文件夹
+    let music_dirs = MUSIC_DIRS.lock().unwrap();
+    let dirs: Vec<String> = music_dirs
+        .iter()
         .map(|path| path.display().to_string())
         .collect();
     Ok(dirs)
