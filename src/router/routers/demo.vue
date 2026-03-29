@@ -1,30 +1,31 @@
 <script>
 import contextMenu from '../../components/base/contextMenu.vue';
-import toggle from '../../components/base/toggle.vue'
-import tracksRow from '../../components/tracks/tracksRow.vue'
+import toggle from '../../components/base/toggle.vue';
+import tracksRow from '../../components/tracks/tracksRow.vue';
 import powerTableVue from '../../components/tracks/powerTable_music.vue';
 import text_contextMenu from '../../components/text_contextMenu.vue';
-import dialogVue from '../../components/base/dialog.vue'
-export default {
-    data() {
-        return {
-            state: true,
-            useDialog: false
-        }
-    },
-    components: {
-        toggle,
-        tracksRow,
-        powerTableVue,
-        contextMenu,
-        text_contextMenu, dialogVue
-    },
-    inject: ['audioManager', 'audioState', 'currentMusicInfo'],
-    props: {},
-    methods: {
+import dialogVue from '../../components/base/dialog.vue';
 
-    }
-}
+export default {
+  name: 'DemoPage',
+  data() {
+    return {
+      state: true,
+      useDialog: false
+    };
+  },
+  components: {
+    toggle,
+    tracksRow,
+    powerTableVue,
+    contextMenu,
+    text_contextMenu,
+    dialogVue
+  },
+  inject: ['audioManager', 'audioState', 'currentMusicInfo'],
+  props: {},
+  methods: {}
+};
 </script>
 
 <template>

@@ -112,52 +112,60 @@
 </style>
 
 <script>
-	import contextMenu from '../base/contextMenu.vue';
-	import baseMethods from '../../js/baseMethods';
-	import lazyLoadCoverImageVue from '../base/lazyLoadCoverImage.vue'
-	export default {
-		inject: ['scrollState'],
-		data() {
-			return {
-				tempTableData: {},
-				currentTable: {
-					cellName: [{
-						type: 'content',
-						path: 'text',
-						name: '没有任何东西',
-					}],
-					cellArray: [{
-						path: '请向组件传递正确内容',
-					}]
-				}
-			}
-		},
-		components: {
-			lazyLoadCoverImageVue,
-			contextMenu,
-		},
-		props: {
-			tableData: Object,
-		},
-		methods: {
-			copy: baseMethods.copy
-		},
-		watch: {
-			scrollState: {
-				handler(newValue, oldValue) {
-				}
-			},
-			tableData: {
-				handler(newValue) {
-					if (newValue.cellName != undefined) {
-						this.currentTable = newValue
-					} else if (newValue.cellArray != undefined) {
-						this.currentTable.cellArray = newValue.cellArray
-					}
-				},
-				deep: true,
-				immediate: true
-			}
-		}
-	}
+import baseMethods from '../../js/baseMethods';
+import lazyLoadCoverImageVue from '../base/lazyLoadCoverImage.vue';
+
+export default {
+  name: 'PowerTable',
+  inject: ['scrollState'],
+  data() {
+    return {
+      tempTableData: {},
+      currentTable: {
+        cellName: [
+          {
+            type: 'content',
+            path: 'text',
+            name: '没有任何东西'
+          }
+        ],
+        cellArray: [
+          {
+            path: '请向组件传递正确内容'
+          }
+        ]
+      }
+    };
+  },
+  components: {
+    lazyLoadCoverImageVue
+  },
+  props: {
+    tableData: {
+      type: Object,
+      default: () => ({})
+    }
+  },
+  methods: {
+    copy: baseMethods.copy
+  },
+  watch: {
+    scrollState: {
+      handler(newValue, oldValue) {
+        // 滚动状态变化处理
+      }
+    },
+    tableData: {
+      handler(newValue) {
+        if (newValue && newValue.cellName !== undefined) {
+          this.currentTable = newValue;
+        } else if (newValue && newValue.cellArray !== undefined) {
+          this.currentTable.cellArray = newValue.cellArray;
+        }
+      },
+      deep: true,
+      immediate: true
+    }
+  }
+};
 </script>
