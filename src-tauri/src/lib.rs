@@ -125,9 +125,16 @@ struct Song {
     sample_rate: Option<u32>,        // 采样率（Hz）
     channels: Option<u8>,            // 声道数
     other_tags: Option<std::collections::HashMap<String, String>>, // 其他标签
-    // 去重合并相关字段
+    // 去重合并相关字段（旧格式，向后兼容）
     sources: Vec<TrackSourceInfo>,   // 所有来源（包括主来源和替代来源）
     primary_source_index: usize,     // 主来源在sources中的索引
+    // ========== 新增：Trace 来源追踪字段 ==========
+    /// 所有来源 Trace（新格式）
+    #[serde(default)]
+    traces: Vec<Trace>,
+    /// 主来源索引（新格式）
+    #[serde(default)]
+    primary_trace_index: usize,
 }
 
 /// 音轨来源信息（简化版，用于前端传输）
@@ -584,6 +591,20 @@ fn parse_music_file(file: PathBuf) -> Result<Song, String> {
                 file_size: std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0),
             };
             
+            // 创建 Trace 来源追踪信息
+            let trace = Trace::local_file(
+                file.display().to_string(),
+                TraceDataType::Track,
+                source_info.id.to_string(),
+            ).with_resource_info(ResourceInfo {
+                format: Some(format.clone()),
+                bitrate: metadata.bitrate,
+                sample_rate: metadata.sample_rate,
+                size: Some(std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0)),
+                duration: metadata.duration,
+                quality_score: Some(quality_score),
+            });
+            
             Song {
                 name: title,
                 id: source_info.id,
@@ -603,9 +624,12 @@ fn parse_music_file(file: PathBuf) -> Result<Song, String> {
                 sample_rate: metadata.sample_rate,
                 channels: metadata.channels,
                 other_tags: metadata.other_tags,
-                // 去重合并相关字段
+                // 去重合并相关字段（旧格式，向后兼容）
                 sources: vec![source_info],
                 primary_source_index: 0,
+                // 新格式：Trace 来源追踪
+                traces: vec![trace],
+                primary_trace_index: 0,
             }
         }
         Err(_) => {
@@ -627,6 +651,20 @@ fn parse_music_file(file: PathBuf) -> Result<Song, String> {
                 file_size: std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0),
             };
             
+            // 创建 Trace 来源追踪信息
+            let trace = Trace::local_file(
+                file.display().to_string(),
+                TraceDataType::Track,
+                source_info.id.to_string(),
+            ).with_resource_info(ResourceInfo {
+                format: None,
+                bitrate: None,
+                sample_rate: None,
+                size: Some(std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0)),
+                duration: None,
+                quality_score: Some(0),
+            });
+            
             Song {
                 name: file_name,
                 id: source_info.id,
@@ -645,8 +683,12 @@ fn parse_music_file(file: PathBuf) -> Result<Song, String> {
                 sample_rate: None,
                 channels: None,
                 other_tags: None,
+                // 去重合并相关字段（旧格式，向后兼容）
                 sources: vec![source_info],
                 primary_source_index: 0,
+                // 新格式：Trace 来源追踪
+                traces: vec![trace],
+                primary_trace_index: 0,
             }
         }
     };
@@ -761,7 +803,7 @@ impl Song {
             "sampleRate": self.sample_rate,
             "channels": self.channels,
             "otherTags": self.other_tags,
-            // 去重合并相关字段
+            // 去重合并相关字段（旧格式，向后兼容）
             "sources": self.sources.iter().map(|s| {
                 json!({
                     "id": s.id,
@@ -776,6 +818,12 @@ impl Song {
             }).collect::<Vec<serde_json_value>>(),
             "primarySourceIndex": self.primary_source_index,
             "sourceCount": self.sources.len(),
+            // ========== 新格式：Trace 来源追踪 ==========
+            "traces": self.traces.iter().map(|t| {
+                serde_json::to_value(t).unwrap_or(json!(null))
+            }).collect::<Vec<serde_json_value>>(),
+            "primaryTraceIndex": self.primary_trace_index,
+            "traceCount": self.traces.len(),
         })
     }
 }
@@ -1045,6 +1093,22 @@ fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
                 });
             }
             
+            // 构建 Trace 列表（从 sources 转换）
+            let traces: Vec<Trace> = sources.iter().map(|s| {
+                Trace::local_file(
+                    s.path.clone(),
+                    TraceDataType::Track,
+                    s.id.to_string(),
+                ).with_resource_info(ResourceInfo {
+                    format: Some(s.format.clone()),
+                    bitrate: s.bitrate,
+                    sample_rate: s.sample_rate,
+                    size: Some(s.file_size),
+                    duration: s.duration,
+                    quality_score: Some(s.quality_score),
+                })
+            }).collect();
+            
             let song = Song {
                 name: cached_song.name.clone(),
                 id: cached_song.id,
@@ -1064,9 +1128,12 @@ fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
                 sample_rate: sources.first().and_then(|s| s.sample_rate),
                 channels: None, // 缓存中暂时没有声道数
                 other_tags: None,
-                // 去重合并相关字段
+                // 去重合并相关字段（旧格式，向后兼容）
                 sources,
                 primary_source_index: 0,
+                // 新格式：Trace 来源追踪
+                traces,
+                primary_trace_index: 0,
             };
             
             // 更新映射

@@ -239,14 +239,23 @@ export default {
             })
         },
         async pushMusicTrack(musicTrack) {
+            const trackCount = musicTrack.length;
             if (this.checkMusicListIsEmpty()) {
                 this.musicTrack.length = 0;
                 this.musicTrack.concat(musicTrack);
                 await this.audioManagerConstruct(this.musicTrack[this.musicTrackIndex])
                 this.audioManager.play()
+                this.regMessage({
+                    type: 'Message',
+                    content: `已添加 ${trackCount} 首音乐至播放列表`
+                })
                 return;
             }
             this.musicTrack.concat(musicTrack)
+            this.regMessage({
+                type: 'Message',
+                content: `已添加 ${trackCount} 首音乐至播放列表`
+            })
         },
         async coverMusicTrack(musicTrack, musicTrackIndex = 0) {
 
@@ -257,6 +266,11 @@ export default {
 
             await this.audioManagerConstruct(this.musicTrack[this.musicTrackIndex])
             this.audioManager.play()
+            
+            this.regMessage({
+                type: 'Message',
+                content: `已替换播放列表，共 ${musicTrack.length} 首音乐`
+            })
         },
         regResizeHandle(key, event) {
             this.resizeEvent[key] = event;
