@@ -5,6 +5,7 @@
  * - 引用计数：每个资源记录被多少个DOM节点引用
  * - DOM追踪：记录调用者的CSS选择器路径（树状结构）
  * - 延迟回收：引用计数归零后等待10秒，期间有新引用则取消回收
+ * - 废弃标记：reclaimed的资源标记为revoked，防止TOCTOU竞态返回死URL
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -18,6 +19,7 @@ class RefCountedEntry {
     this.consumers = new Map();
     this.releaseTimer = null;
     this.timestamp = Date.now();
+    this.revoked = false;
   }
 }
 
@@ -71,12 +73,14 @@ class LazyLoader {
 
   #startReleaseTimer(key) {
     const entry = this.#cache.get(key);
-    if (!entry) return;
+    if (!entry || entry.revoked) return;
 
     this.#cancelReleaseTimer(key);
 
     entry.releaseTimer = setTimeout(() => {
-      if (entry.refCount <= 0) {
+      const current = this.#cache.get(key);
+      if (!current || current.revoked) return;
+      if (current.refCount <= 0) {
         this.#reclaim(key);
       }
     }, RECLAIM_DELAY_MS);
@@ -92,24 +96,34 @@ class LazyLoader {
 
   #reclaim(key) {
     const entry = this.#cache.get(key);
-    if (!entry) return;
+    if (!entry || entry.revoked) return;
+
+    entry.revoked = true;
 
     try {
       entry.data.destroyObjectURL?.();
     } catch (e) {
-      console.warn(`Failed to reclaim resource ${key}:`, e);
+      console.warn(`Failed to revoke ObjectURL for ${key}:`, e);
     }
 
     this.#cache.delete(key);
+
     console.log(`Resource reclaimed: ${key}`);
   }
 
-  acquire(key, domElement) {
-    let entry = this.#cache.get(key);
+  #getValidEntry(key) {
+    const entry = this.#cache.get(key);
+    if (!entry || entry.revoked) return null;
+    return entry;
+  }
 
+  acquire(key, domElement) {
+    const entry = this.#getValidEntry(key);
     if (!entry) return null;
 
     this.#cancelReleaseTimer(key);
+
+    if (entry.revoked) return null;
 
     const selector = this.#getDomSelector(domElement);
     const prevCount = entry.consumers.get(selector) || 0;
@@ -122,7 +136,7 @@ class LazyLoader {
   }
 
   release(key, domElement) {
-    const entry = this.#cache.get(key);
+    const entry = this.#getValidEntry(key);
     if (!entry) return;
 
     const selector = this.#getDomSelector(domElement);
@@ -144,7 +158,8 @@ class LazyLoader {
   }
 
   isCached(key) {
-    return this.#cache.has(key);
+    const entry = this.#cache.get(key);
+    return !!entry && !entry.revoked;
   }
 
   getCacheStats() {
@@ -153,13 +168,14 @@ class LazyLoader {
       entries.push({
         key,
         refCount: entry.refCount,
+        revoked: entry.revoked,
         consumers: [...entry.consumers.keys()],
         hasPendingRelease: entry.releaseTimer !== null,
         age: Date.now() - entry.timestamp,
       });
     }
     return {
-      size: entries.length,
+      size: entries.filter(e => !e.revoked).length,
       entries,
     };
   }
@@ -174,9 +190,10 @@ class LazyLoader {
   async loadAlbumCover(albumId, maxResolution = 368) {
     const key = this.#getCacheKey(`cover_${maxResolution}`, albumId);
 
-    if (this.isCached(key)) {
+    const cachedEntry = this.#getValidEntry(key);
+    if (cachedEntry) {
       console.log(`Cover ${albumId}@${maxResolution} served from cache`);
-      return this.#cache.get(key).data;
+      return cachedEntry.data;
     }
 
     if (this.#loadingPromises.has(key)) {
@@ -190,10 +207,18 @@ class LazyLoader {
           maxResolution,
         });
 
+        const objectURL = URL.createObjectURL(new Blob([result]));
         const data = {
-          objectURL: URL.createObjectURL(new Blob([result])),
-          destroyObjectURL: () => URL.revokeObjectURL(data.objectURL),
+          objectURL,
+          destroyObjectURL: () => URL.revokeObjectURL(objectURL),
         };
+
+        const existing = this.#cache.get(key);
+        if (existing && !existing.revoked) {
+          console.log(`Cover ${albumId}@${maxResolution} loaded but already cached, revoking duplicate`);
+          URL.revokeObjectURL(objectURL);
+          return existing.data;
+        }
 
         const entry = new RefCountedEntry(data);
         this.#cache.set(key, entry);
@@ -211,8 +236,9 @@ class LazyLoader {
   async loadOriginAlbumCover(albumId) {
     const key = this.#getCacheKey('cover_origin', albumId);
 
-    if (this.isCached(key)) {
-      return this.#cache.get(key).data;
+    const cachedEntry = this.#getValidEntry(key);
+    if (cachedEntry) {
+      return cachedEntry.data;
     }
 
     if (this.#loadingPromises.has(key)) {
@@ -223,10 +249,17 @@ class LazyLoader {
       try {
         const result = await invoke('get_album_cover', { albumId });
 
+        const objectURL = URL.createObjectURL(new Blob([result]));
         const data = {
-          objectURL: URL.createObjectURL(new Blob([result])),
-          destroyObjectURL: () => URL.revokeObjectURL(data.objectURL),
+          objectURL,
+          destroyObjectURL: () => URL.revokeObjectURL(objectURL),
         };
+
+        const existing = this.#cache.get(key);
+        if (existing && !existing.revoked) {
+          URL.revokeObjectURL(objectURL);
+          return existing.data;
+        }
 
         const entry = new RefCountedEntry(data);
         this.#cache.set(key, entry);
@@ -244,8 +277,9 @@ class LazyLoader {
   async loadMusicFile(songId) {
     const key = this.#getCacheKey('music', songId);
 
-    if (this.isCached(key)) {
-      return this.#cache.get(key).data;
+    const cachedEntry = this.#getValidEntry(key);
+    if (cachedEntry) {
+      return cachedEntry.data;
     }
 
     if (this.#loadingPromises.has(key)) {
@@ -256,10 +290,17 @@ class LazyLoader {
       try {
         const result = await invoke('get_music_file', { songId });
 
+        const objectURL = URL.createObjectURL(new Blob([result]));
         const data = {
-          objectURL: URL.createObjectURL(new Blob([result])),
-          destroyObjectURL: () => URL.revokeObjectURL(data.objectURL),
+          objectURL,
+          destroyObjectURL: () => URL.revokeObjectURL(objectURL),
         };
+
+        const existing = this.#cache.get(key);
+        if (existing && !existing.revoked) {
+          URL.revokeObjectURL(objectURL);
+          return existing.data;
+        }
 
         const entry = new RefCountedEntry(data);
         this.#cache.set(key, entry);

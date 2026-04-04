@@ -20,11 +20,15 @@ import LazyLoadCoverImage from './base/lazyLoadCoverImage.vue'
 export default {
     name: 'album',
     props: {
-        album: Object
+        album: Object,
+        alwaysShow: {
+            type: Boolean,
+            default: false
+        }
     },
     data() {
         return {
-            show: false
+            show: this.alwaysShow
         }
     },
     components: {
@@ -32,27 +36,33 @@ export default {
     },
     methods: {
         updateShow() {
+            if (this.alwaysShow) {
+                this.show = true
+                return
+            }
             let distanceScreenTop = this.$refs['albumDom'].offsetTop - this.scrollState.scrollTop
             let outOfScreenFront = (distanceScreenTop + this.$refs['albumDom'].offsetHeight) < 0;
             let outOfScreenHead = distanceScreenTop > this.scrollState.scrollSize
 
-            // console.log(distanceScreenTop, outOfScreenFront, outOfScreenHead);
             if (outOfScreenFront == false && outOfScreenHead == false) {
                 this.show = true
             }
         }
     },
     mounted(){
+        if (this.alwaysShow) {
+            this.show = true
+            return
+        }
         requestAnimationFrame(()=>{
             this.updateShow()
         })
-        // this.updateShow()
     },
     inject: ['scrollState'],
     watch: {
         scrollState: {
             handler(newValue) {
-                
+                if (this.alwaysShow) return
                 requestAnimationFrame(()=>{
                     this.updateShow()
                 })
@@ -66,7 +76,6 @@ export default {
 <style scoped>
 *{
     user-select: none;
-    /* pointer-events: ; */
     cursor: pointer;
 }
 .coverImageRow {
