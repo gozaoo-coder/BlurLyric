@@ -50,11 +50,11 @@ impl ImageProcessor {
         let gpu_initialized = if config.use_gpu {
             match init_gpu_processor() {
                 Ok(_) => {
-                    println!("GPU image processor initialized successfully");
+                    tracing::info!("GPU image processor initialized successfully");
                     true
                 }
                 Err(e) => {
-                    println!("Failed to initialize GPU processor: {}, falling back to CPU", e);
+                    tracing::warn!(error = %e, "Failed to initialize GPU processor, falling back to CPU");
                     false
                 }
             }
@@ -86,7 +86,7 @@ impl ImageProcessor {
             match resize_with_gpu_fallback(&image, new_width, new_height) {
                 Ok(result) => return result,
                 Err(e) => {
-                    println!("GPU resize failed, using CPU: {}", e);
+                    tracing::warn!(error = %e, "GPU resize failed, using CPU fallback");
                 }
             }
         }
@@ -128,7 +128,7 @@ impl ImageProcessor {
                 match resize_with_gpu_fallback(&image, new_width, new_height) {
                     Ok(result) => return Ok(result),
                     Err(e) => {
-                        println!("GPU resize failed in async: {}", e);
+                        tracing::warn!(error = %e, "GPU resize failed in async context");
                     }
                 }
             }
@@ -200,19 +200,19 @@ impl ImageProcessor {
         // 加载图片
         let image = self.load_from_memory(&cover_data)?;
         let load_duration = start.elapsed();
-        println!("图片加载耗时: {:?}", load_duration);
+        tracing::debug!(load_duration = ?load_duration, "Image load duration");
 
         // 调整大小（使用GPU加速）
         let start = Instant::now();
         let resized = self.resize_async(image, max_resolution).await?;
         let resize_duration = start.elapsed();
-        println!("图片缩放耗时: {:?} (GPU: {})", resize_duration, self.gpu_initialized);
+        tracing::debug!(resize_duration = ?resize_duration, gpu = self.gpu_initialized, "Image resize duration");
 
         // 编码
         let start = Instant::now();
         let encoded = self.encode_webp_async(resized).await?;
         let encode_duration = start.elapsed();
-        println!("图片编码耗时: {:?}", encode_duration);
+        tracing::debug!(encode_duration = ?encode_duration, "Image encode duration");
 
         Ok(encoded)
     }

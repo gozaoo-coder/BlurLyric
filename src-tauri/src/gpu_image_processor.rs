@@ -369,7 +369,7 @@ impl GpuImageProcessor {
         let buffer_slice = output_buffer.slice(..);
         buffer_slice.map_async(wgpu::MapMode::Read, |result| {
             if let Err(e) = result {
-                eprintln!("Failed to map buffer: {}", e);
+                tracing::error!(error = %e, "Failed to map GPU buffer");
             }
         });
 
@@ -377,9 +377,8 @@ impl GpuImageProcessor {
 
         let data = buffer_slice.get_mapped_range();
         
-        // 从对齐的数据中提取实际图像数据
         let mut image_data = Vec::with_capacity((new_width * new_height * 4) as usize);
-        for row in 0..new_height {
+        for row in (0..new_height).rev() {
             let row_start = (row * bytes_per_row_aligned) as usize;
             let row_end = row_start + (new_width * 4) as usize;
             image_data.extend_from_slice(&data[row_start..row_end]);
@@ -438,19 +437,17 @@ pub fn resize_with_gpu_fallback(
     if let Some(gpu) = get_gpu_processor() {
         match gpu.resize(image, new_width, new_height) {
             Ok(result) => {
-                println!("GPU resize succeeded: {}x{} -> {}x{}", 
-                    image.width(), image.height(), new_width, new_height);
+                tracing::debug!(from_w = image.width(), from_h = image.height(), to_w = new_width, to_h = new_height, "GPU resize succeeded");
                 return Ok(result);
             }
             Err(e) => {
-                println!("GPU resize failed, falling back to CPU: {}", e);
+                tracing::warn!(error = %e, "GPU resize failed, falling back to CPU");
             }
         }
     }
 
     // CPU 降级处理
-    println!("Using CPU resize: {}x{} -> {}x{}", 
-        image.width(), image.height(), new_width, new_height);
+    tracing::debug!(from_w = image.width(), from_h = image.height(), to_w = new_width, to_h = new_height, "Using CPU resize");
     
     use image::imageops::FilterType;
     Ok(image.resize(new_width, new_height, FilterType::Lanczos3))

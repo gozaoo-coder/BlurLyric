@@ -8,6 +8,7 @@ use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tokio::fs as async_fs;
+use tracing::{info, debug, warn, error};
 
 // 引入新的music_tag模块
 mod music_tag;
@@ -412,7 +413,7 @@ fn scan_music_files(dir: &PathBuf) -> Vec<PathBuf> {
                 if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
                     scan_music_files(&entry.path())
                 } else if is_music_file(&entry) {
-                    println!("Found music file: {}", entry.path().display());
+                    info!(found_file = %entry.path().display(), "Found music file");
                     vec![entry.path()]
                 } else {
                     vec![]
@@ -653,7 +654,7 @@ fn refresh_music_cache() -> Result<(), String> {
     let mut new_cache = HashMap::new();
 
     for dir in &*music_dirs {
-        println!("Scanning music files in: {}", dir.display());
+        info!(scan_dir = %dir.display(), "Scanning music files");
 
         if dir.is_dir() {
             let songs = scan_music_files(dir);
@@ -664,20 +665,17 @@ fn refresh_music_cache() -> Result<(), String> {
                     new_cache.insert(dir.clone(), songs);
                 }
                 Err(e) => {
-                    eprintln!("Error parsing music files in {}: {}", dir.display(), e);
+                    error!(error = %e, dir = %dir.display(), "Error parsing music files");
                     return Err(e);
                 }
             }
         } else {
             match remove_music_dirs(vec![dir.display().to_string()]) {
                 Ok(_) => {
-                    eprintln!(
-                        "Path is not a directory, removed from music dirs: {}",
-                        dir.display()
-                    );
+                    warn!(path = %dir.display(), "Path is not a directory, removed from music dirs");
                 }
                 Err(e) => {
-                    eprintln!("Failed to remove path from music dirs: {}", e);
+                    error!(error = %e, "Failed to remove path from music dirs");
                 }
             }
 
@@ -791,42 +789,42 @@ fn get_users_music_dir() -> String {
 #[tauri::command]
 fn init_application() {
     PerformanceMonitor::start_timer("init_application");
-    println!("Initializing application with optimized resource management...");
+    info!("Initializing application with optimized resource management");
 
     // 1. 初始化音乐库缓存管理器
     if let Err(e) = LibraryCacheManager::init() {
-        eprintln!("Failed to initialize music library cache: {}", e);
+        error!(error = %e, "Failed to initialize music library cache");
     }
 
     // 2. 初始化资源缓存管理器
     if let Err(e) = ResourceCacheManager::init() {
-        eprintln!("Failed to initialize resource cache: {}", e);
+        error!(error = %e, "Failed to initialize resource cache");
     }
 
     // 3. 加载音乐目录
     if let Err(e) = load_music_dirs_from_disk() {
-        eprintln!("Failed to load music directories from disk: {}", e);
+        error!(error = %e, "Failed to load music directories from disk");
     }
 
     // 4. 尝试从缓存加载数据（快速启动）
     let cache_loaded = load_from_persistent_cache();
     
     if !cache_loaded {
-        println!("No valid cache found, performing full scan...");
-        // 首次启动或缓存无效，执行全量扫描
+        info!("No valid cache found, performing full scan");
+        // 首次启动或缓存无效,执行全量扫描
         if let Err(e) = refresh_music_cache() {
-            eprintln!("Failed to refresh music cache: {}", e);
+            error!(error = %e, "Failed to refresh music cache");
         }
         // 保存到持久化缓存
         save_to_persistent_cache();
     } else {
-        println!("Loaded from cache successfully, performing incremental scan...");
+        info!("Loaded from cache successfully, performing incremental scan");
         // 后台执行增量扫描更新缓存
         perform_background_incremental_scan();
     }
 
     if let Some(duration) = PerformanceMonitor::end_timer("init_application") {
-        println!("Application initialization completed in {}ms", duration);
+        info!(init_duration_ms = duration, "Application initialization completed");
         PerformanceMonitor::record_metric(
             MetricType::ScanDuration,
             duration,
@@ -847,11 +845,11 @@ fn load_from_persistent_cache() -> bool {
                     
                     // 将缓存数据加载到内存
                     rebuild_memory_cache_from_persistent(&cache);
-                    println!("Loaded {} songs from persistent cache", cache.songs.len());
+                    info!(song_count = cache.songs.len(), "Loaded songs from persistent cache");
                     return true;
                 }
                 Err(e) => {
-                    eprintln!("Failed to load from persistent cache: {}", e);
+                    error!(error = %e, "Failed to load from persistent cache");
                 }
             }
         }
@@ -1049,10 +1047,10 @@ fn save_to_persistent_cache() {
             let cache = build_persistent_cache_from_memory();
             
             if let Err(e) = manager.save_to_disk(&cache) {
-                eprintln!("Failed to save to persistent cache: {}", e);
+                error!(error = %e, "Failed to save to persistent cache");
             } else {
                 manager.update_memory_cache(cache);
-                println!("Saved to persistent cache successfully");
+                info!("Saved to persistent cache successfully");
             }
         }
     }
@@ -1149,7 +1147,7 @@ fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
 // 后台执行增量扫描
 fn perform_background_incremental_scan() {
     std::thread::spawn(|| {
-        println!("Starting background incremental scan...");
+        info!("Starting background incremental scan");
         PerformanceMonitor::start_timer("background_scan");
         
         // 执行增量扫描
@@ -1174,8 +1172,7 @@ fn perform_background_incremental_scan() {
         match scanner.scan_incremental(&music_dirs, &existing_cache) {
             Ok(scan_result) => {
                 if scan_result.total_changes() > 0 {
-                    println!("Background scan found {} changes, updating cache...", 
-                        scan_result.total_changes());
+                    info!(changes = scan_result.total_changes(), "Background scan found changes, updating cache");
                     
                     let new_cache = incremental_scanner::build_cache_from_scan(
                         scan_result, 
@@ -1196,16 +1193,16 @@ fn perform_background_incremental_scan() {
                             .load_from_disk().unwrap()
                     );
                 } else {
-                    println!("No changes detected in background scan");
+                    info!("No changes detected in background scan");
                 }
             }
             Err(e) => {
-                eprintln!("Background incremental scan failed: {}", e);
+                error!(error = %e, "Background incremental scan failed");
             }
         }
         
         if let Some(duration) = PerformanceMonitor::end_timer("background_scan") {
-            println!("Background scan completed in {}ms", duration);
+            info!(duration_ms = duration, "Background scan completed");
             PerformanceMonitor::record_metric(
                 MetricType::ScanDuration,
                 duration,
@@ -1227,7 +1224,7 @@ async fn get_low_quality_album_cover(
     
     // 检查缓存是否存在
     if cache_path.exists() {
-        println!("Cache hit for album {} at resolution {}", album_id, max_resolution);
+        debug!(album_id = %album_id, resolution = %max_resolution, "Cache hit for album cover");
         
         if let Some(duration) = PerformanceMonitor::end_timer(&format!("album_cover_{}", album_id)) {
             PerformanceMonitor::record_metric(
@@ -1302,13 +1299,13 @@ fn get_album_cover(album_id: u32) -> Result<tauri::ipc::Response, String> {
 #[tauri::command]
 async fn get_music_file(song_id: u32) -> Result<tauri::ipc::Response, String> {
     PerformanceMonitor::start_timer(&format!("music_file_{}", song_id));
-    
-    println!("Searching for song with ID: {}", song_id);
 
-    // 查找具有匹配 song_id 的歌曲，并立即释放锁
+    debug!(song_id = %song_id, "Searching for song");
+
+    // 查找具有匹配 song_id 的歌曲,并立即释放锁
     let song_path = {
         let cache = MUSIC_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
-        println!("Cache locked, searching for song...");
+        debug!("Cache locked, searching for song");
         cache.values().flatten().find_map(|s| {
             if s.id == song_id {
                 Some(s.src.clone())
@@ -1320,18 +1317,18 @@ async fn get_music_file(song_id: u32) -> Result<tauri::ipc::Response, String> {
 
     // 根据找到的路径读取文件
     let result = if let Some(song_path) = song_path {
-        println!("Song found, trying to read file: {}", song_path.display());
+        debug!(path = %song_path.display(), "Song found, reading file");
 
         // 读取歌曲文件内容
         match async_fs::read(song_path).await {
             Ok(data) => {
-                println!("Song finished reading, sending to front");
+                debug!("Song data sent to frontend");
                 Ok(tauri::ipc::Response::new(data))
             }
             Err(e) => Err(format!("Failed to read music file: {}", e)),
         }
     } else {
-        println!("Music file not found in cache");
+        warn!(song_id = %song_id, "Music file not found in cache");
         Err("Music file not found".into())
     };
     
@@ -1371,7 +1368,7 @@ fn remove_music_dirs(dirs_to_remove: Vec<String>) -> Result<(), String> {
         }
     }
 
-    save_music_dirs_to_disk();
+    let _ = save_music_dirs_to_disk();
     Ok(())
 }
 
@@ -1382,14 +1379,14 @@ fn save_music_dirs_to_disk() -> Result<(), String> {
         dirs.clone()
     };
     let cache_dir = get_cache_dir().map_err(|e| e.to_string())?;
-    println!("Cache directory: {:?}", cache_dir);
+    debug!(cache_dir = ?cache_dir, "Cache directory");
     if !cache_dir.exists() {
         if let Err(e) = fs::create_dir_all(&cache_dir) {
             return Err(format!("Failed to create cache directory: {}", e));
         }
     }
     let file_path = cache_dir.join("MUSIC_DIRS.json");
-    println!("File path: {:?}", file_path);
+    debug!(file_path = ?file_path, "File path");
     let file = match fs::File::create(&file_path) {
         Ok(f) => f,
         Err(e) => return Err(format!("Failed to create file: {}", e)),
@@ -1403,14 +1400,14 @@ fn save_music_dirs_to_disk() -> Result<(), String> {
 // 从磁盘加载音乐目录
 fn load_music_dirs_from_disk() -> Result<(), String> {
     let cache_dir = get_cache_dir().map_err(|e| e.to_string())?;
-    println!("Cache directory: {:?}", cache_dir);
+    debug!(cache_dir = ?cache_dir, "Cache directory");
     if !cache_dir.exists() {
         if let Err(e) = fs::create_dir_all(&cache_dir) {
             return Err(format!("Failed to create cache directory: {}", e));
         }
     }
     let file_path = cache_dir.join("MUSIC_DIRS.json");
-    println!("File path: {:?}", file_path);
+    debug!(file_path = ?file_path, "File path");
     if !file_path.exists() {
         let audio_dir = dirs::audio_dir().ok_or("No default audio directory found")?;
         let dirs = vec![audio_dir];
@@ -1442,7 +1439,7 @@ fn add_music_dirs(new_dirs: Vec<String>) -> Result<(), String> {
         let mut music_dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
         music_dirs.extend(new_dirs.iter().map(PathBuf::from));
     }
-    save_music_dirs_to_disk();
+    let _ = save_music_dirs_to_disk();
     Ok(())
 }
 
@@ -1524,7 +1521,7 @@ fn clear_image_cache() -> Result<u32, String> {
         }
     }
 
-    println!("Cleared {} image cache files", deleted_count);
+    info!(deleted_count = deleted_count, "Cleared image cache files");
     Ok(deleted_count)
 }
 
@@ -1558,7 +1555,7 @@ fn reset_all_data() -> Result<(), String> {
         }
     }
 
-    println!("All application data has been reset");
+    info!("All application data has been reset");
     Ok(())
 }
 
@@ -1598,7 +1595,13 @@ async fn toggle_always_on_top(window: tauri::Window) -> Result<bool, String> {
 // Tauri应用入口点
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 初始化缓存管理器
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "blurlyric=info,wgpu=warn".into()),
+        )
+        .init();
+
     let _ = LibraryCacheManager::init();
     let _ = ResourceCacheManager::init();
 

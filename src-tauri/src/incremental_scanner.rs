@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 use crate::common::utils;
+use tracing::{info, error};
 
 /// 扫描结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,7 +108,7 @@ impl IncrementalScanner {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to parse music file {}: {}", path_str, e);
+                    error!(file = %path_str, error = %e, "Failed to parse music file");
                 }
             }
         }
@@ -123,13 +124,15 @@ impl IncrementalScanner {
         
         result.scan_duration_ms = start_time.elapsed().as_millis() as u64;
         
-        println!("Incremental scan completed:");
-        println!("  - Files scanned: {}", result.files_scanned);
-        println!("  - Added: {}", result.added.len());
-        println!("  - Modified: {}", result.modified.len());
-        println!("  - Removed: {}", result.removed.len());
-        println!("  - Unchanged: {}", result.unchanged.len());
-        println!("  - Duration: {}ms", result.scan_duration_ms);
+        info!(
+            files_scanned = result.files_scanned,
+            added = result.added.len(),
+            modified = result.modified.len(),
+            removed = result.removed.len(),
+            unchanged = result.unchanged.len(),
+            duration_ms = result.scan_duration_ms,
+            "Incremental scan completed"
+        );
         
         Ok(result)
     }
@@ -150,18 +153,19 @@ impl IncrementalScanner {
                     result.added.push(song_metadata);
                 }
                 Err(e) => {
-                    eprintln!("Failed to parse music file {}: {}", 
-                        file_path.display(), e);
+                    error!(file = %file_path.display(), error = %e, "Failed to parse music file");
                 }
             }
         }
         
         result.scan_duration_ms = start_time.elapsed().as_millis() as u64;
         
-        println!("Full scan completed:");
-        println!("  - Files scanned: {}", result.files_scanned);
-        println!("  - Added: {}", result.added.len());
-        println!("  - Duration: {}ms", result.scan_duration_ms);
+        info!(
+            files_scanned = result.files_scanned,
+            added = result.added.len(),
+            duration_ms = result.scan_duration_ms,
+            "Full scan completed"
+        );
         
         Ok(result)
     }
