@@ -13,6 +13,7 @@ use std::fs::{self, DirEntry};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
+use crate::common::utils;
 
 /// 扫描结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,12 +189,8 @@ impl IncrementalScanner {
         }
     }
     
-    /// 检查是否为音乐文件
     fn is_music_file(&self, entry: &DirEntry) -> bool {
-        matches!(
-            entry.path().extension().and_then(|ext| ext.to_str()),
-            Some("mp3" | "ogg" | "flac" | "m4a" | "wav" | "aac")
-        )
+        utils::is_music_file(entry)
     }
     
     /// 解析音乐文件元数据
@@ -357,13 +354,8 @@ pub fn build_cache_from_scan(
     cache
 }
 
-/// 获取当前时间戳
 fn current_timestamp() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+    utils::current_timestamp()
 }
 
 /// 扫描结果摘要（用于前端展示）

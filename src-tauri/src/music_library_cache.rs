@@ -39,6 +39,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use once_cell::sync::Lazy;
+use crate::common::utils;
 
 /// 文件指纹信息（用于增量扫描）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,41 +99,8 @@ pub struct TrackSource {
 }
 
 impl TrackSource {
-    /// 计算音质评分
     pub fn calculate_quality_score(&self) -> u32 {
-        let mut score = 0u32;
-        
-        // 比特率分数 (最高320分)
-        if let Some(bitrate) = self.bitrate {
-            score += bitrate.min(320);
-        }
-        
-        // 格式分数 (无损格式优先)
-        score += match self.format.to_lowercase().as_str() {
-            "flac" => 500,
-            "wav" | "aiff" => 400,
-            "aac" | "m4a" => 300,
-            "mp3" => 200,
-            "ogg" => 250,
-            "wma" => 150,
-            _ => 100,
-        };
-        
-        // 采样率分数 (最高480分，48kHz)
-        if let Some(sample_rate) = self.sample_rate {
-            score += (sample_rate / 100).min(480);
-        }
-        
-        // 时长分数 (完整曲目优先，最高100分)
-        if let Some(duration) = self.duration {
-            if duration > 180.0 { // 超过3分钟
-                score += 100;
-            } else if duration > 60.0 { // 超过1分钟
-                score += 50;
-            }
-        }
-        
-        score
+        utils::calculate_audio_quality_score(self.bitrate, &self.format, self.sample_rate, self.duration)
     }
     
     /// 从元数据创建TrackSource
@@ -399,23 +367,14 @@ pub struct LibraryCacheStats {
     pub last_updated: u64,
 }
 
-/// 获取音乐库缓存目录
 fn get_library_cache_dir() -> Result<PathBuf, String> {
-    let path = dirs::cache_dir().ok_or("Cannot get cache directory")?;
-    let mut path = path;
-    path.push("com.blurlyric.app");
-    if !path.exists() {
-        fs::create_dir_all(&path).map_err(|e| e.to_string())?;
-    }
+    let path = utils::get_base_cache_dir()?;
+    utils::ensure_cache_dir(&path)?;
     Ok(path)
 }
 
-/// 获取当前时间戳
 fn current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+    utils::current_timestamp()
 }
 
 // ========== Tauri IPC 命令 ==========

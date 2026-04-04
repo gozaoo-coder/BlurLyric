@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use once_cell::sync::Lazy;
+use crate::common::utils;
 
 /// 性能指标类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -322,13 +323,8 @@ pub struct PerformanceReport {
     pub recommendations: Vec<String>,
 }
 
-/// 获取当前时间戳
 fn current_timestamp() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+    utils::current_timestamp()
 }
 
 /// Tauri命令：获取性能统计

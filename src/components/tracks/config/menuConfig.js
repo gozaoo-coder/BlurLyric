@@ -431,10 +431,10 @@ export const tableColumnConfig = [
     name: '歌曲名',
   },
   {
-    type: 'content',
+    type: 'artists',
     path: function () {
-      if (!this.line.ar || !Array.isArray(this.line.ar)) return '';
-      return this.line.ar.map((ar) => ar.name).join('&');
+      if (!this.line.ar || !Array.isArray(this.line.ar)) return [];
+      return this.line.ar.map((ar) => ({ name: ar.name, id: ar.id }));
     },
     name: '歌手',
     spacialStyle: {

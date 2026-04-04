@@ -107,6 +107,35 @@ pub enum PictureType {
     PublisherLogotype = 0x14,
 }
 
+impl From<u8> for PictureType {
+    fn from(value: u8) -> Self {
+        match value {
+            0x00 => PictureType::Other,
+            0x01 => PictureType::FileIcon,
+            0x02 => PictureType::OtherFileIcon,
+            0x03 => PictureType::FrontCover,
+            0x04 => PictureType::BackCover,
+            0x05 => PictureType::LeafletPage,
+            0x06 => PictureType::Media,
+            0x07 => PictureType::LeadArtist,
+            0x08 => PictureType::Artist,
+            0x09 => PictureType::Conductor,
+            0x0A => PictureType::Band,
+            0x0B => PictureType::Composer,
+            0x0C => PictureType::Lyricist,
+            0x0D => PictureType::RecordingLocation,
+            0x0E => PictureType::DuringRecording,
+            0x0F => PictureType::DuringPerformance,
+            0x10 => PictureType::VideoScreenCapture,
+            0x11 => PictureType::Fish,
+            0x12 => PictureType::Illustration,
+            0x13 => PictureType::BandLogotype,
+            0x14 => PictureType::PublisherLogotype,
+            _ => PictureType::Other,
+        }
+    }
+}
+
 /// 图片数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Picture {

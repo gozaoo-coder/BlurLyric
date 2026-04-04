@@ -53,6 +53,10 @@ pub use http_proxy::{HttpRequest, HttpResponse, http_request, http_get, http_pos
 // 引入统一数据模型模块（内部使用，不在此导出以避免与现有结构体冲突）
 mod models;
 
+// 引入公共工具模块
+mod common;
+use common::utils::{self as utils};
+
 static SONG_ID_COUNTER: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
 static ARTIST_ID_COUNTER: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
 static ALBUM_ID_COUNTER: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
@@ -68,11 +72,11 @@ static ALWAYS_ON_TOP_STATE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 // 导出音乐目录列表供其他模块使用
 pub fn get_music_dirs() -> Vec<PathBuf> {
-    MUSIC_DIRS.lock().unwrap().clone()
+    MUSIC_DIRS.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 fn get_or_create_artist(name: String) -> Artist {
-    let mut cache = ARTIST_CACHE.lock().unwrap();
+    let mut cache = ARTIST_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     cache
         .entry(name.clone())
         .or_insert_with(|| {
@@ -87,7 +91,7 @@ fn get_or_create_artist(name: String) -> Artist {
 }
 
 fn get_or_create_album(name: String) -> Album {
-    let mut cache = ALBUM_CACHE.lock().unwrap();
+    let mut cache = ALBUM_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     cache
         .entry(name.clone())
         .or_insert_with(|| {
@@ -155,7 +159,7 @@ struct Artist {
 
 impl Artist {
     fn get_songs(&self) -> Vec<Song> {
-        let map = ARTIST_SONGS_MAP.lock().unwrap();
+        let map = ARTIST_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
         map.get(&self.id).unwrap_or(&vec![]).clone()
     }
 }
@@ -170,7 +174,7 @@ struct Album {
 // 生成缓存图片路径
 fn get_cache_image_path(cache_dir: &PathBuf, album_id: u32, max_resolution: u32) -> PathBuf {
     let mut path = cache_dir.clone();
-    let binding = ALBUM_CACHE.lock().unwrap();
+    let binding = ALBUM_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let album = binding.values().find(|album| album.id == album_id).unwrap();
     path.push(sanitize_filename(format!(
         "album_{}_{}.webp",
@@ -179,14 +183,9 @@ fn get_cache_image_path(cache_dir: &PathBuf, album_id: u32, max_resolution: u32)
     path
 }
 
-// 获取缓存目录
 fn get_cache_dir() -> Result<PathBuf, String> {
-    let path = dirs::cache_dir().ok_or("Cannot get cache directory")?;
-    let mut path = path;
-    path.push("com.blurlyric.app");
-    if !path.exists() {
-        fs::create_dir_all(&path).map_err(|e| e.to_string())?;
-    }
+    let path = utils::get_base_cache_dir()?;
+    utils::ensure_cache_dir(&path)?;
     Ok(path)
 }
 
@@ -199,7 +198,7 @@ fn read_image_from_cache(path: &PathBuf) -> Result<tauri::ipc::Response, String>
 
 // 从专辑获取封面数据
 fn get_album_cover_data(album_id: u32) -> Result<Vec<u8>, String> {
-    let cache = MUSIC_CACHE.lock().unwrap();
+    let cache = MUSIC_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     for songs in cache.values() {
         for song in songs {
             if song.al.id == album_id {
@@ -231,62 +230,31 @@ fn resize_image(image: DynamicImage, max_resolution: u32) -> DynamicImage {
     }
 }
 
-const MAX_FILENAME_LENGTH: usize = 50;
-
 fn sanitize_filename(name: String) -> String {
-    let sanitized: String = name
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '_' || c == '-' || c == '.' {
-                c.to_string()
-            } else {
-                "_".to_string()
-            }
-        })
-        .collect();
-    if sanitized.len() > MAX_FILENAME_LENGTH {
-        let mut truncated = sanitized
-            .chars()
-            .take(MAX_FILENAME_LENGTH)
-            .collect::<String>();
-        while truncated.ends_with('.') || truncated.ends_with('_') {
-            if !truncated.is_empty() {
-                truncated.pop();
-            } else {
-                break;
-            }
-        }
-        truncated
-    } else {
-        sanitized
-    }
+    utils::sanitize_filename(name)
 }
 
 // ID生成器
 fn next_id(counter: &Mutex<u32>) -> u32 {
-    let mut id = counter.lock().unwrap();
+    let mut id = counter.lock().unwrap_or_else(|e| e.into_inner());
     *id += 1;
     *id
 }
 
-// 文件是否是音乐文件
 fn is_music_file(entry: &DirEntry) -> bool {
-    matches!(
-        entry.path().extension().and_then(|ext| ext.to_str()),
-        Some("mp3" | "ogg" | "flac" | "m4a" | "wav" | "aac")
-    )
+    utils::is_music_file(entry)
 }
 
 #[tauri::command]
 fn get_all_my_albums() -> Result<Vec<Album>, String> {
-    let album_cache = ALBUM_CACHE.lock().unwrap();
+    let album_cache = ALBUM_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     let albums = album_cache.values().cloned().collect();
     Ok(albums)
 }
 
 #[tauri::command]
 fn get_all_my_artists() -> Result<Vec<Artist>, String> {
-    let artist_cache = ARTIST_CACHE.lock().unwrap();
+    let artist_cache = ARTIST_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     let artists = artist_cache.values().cloned().collect();
     Ok(artists)
 }
@@ -294,12 +262,12 @@ fn get_all_my_artists() -> Result<Vec<Artist>, String> {
 // Tauri命令
 #[tauri::command]
 fn get_music_list() -> Result<Vec<Song>, String> {
-    let cache = MUSIC_CACHE.lock().unwrap();
+    let cache = MUSIC_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     let all_songs: Vec<Song> = cache
         .values()
         .flat_map(|songs| songs.iter().cloned())
         .collect();
-    
+
     // 执行去重合并
     let deduplicated = deduplicate_songs(all_songs);
     Ok(deduplicated)
@@ -349,21 +317,8 @@ fn generate_fingerprint(song: &Song) -> String {
     )
 }
 
-/// 标准化字符串（用于去重）
 fn normalize_for_dedup(s: &str) -> String {
-    s.to_lowercase()
-        .trim()
-        .replace(" ", "")
-        .replace("_", "")
-        .replace("-", "")
-        .replace("'", "")
-        .replace("\"", "")
-        .replace("(", "")
-        .replace(")", "")
-        .replace("[", "")
-        .replace("]", "")
-        .replace("，", "")
-        .replace(",", "")
+    utils::normalize_for_matching(s)
 }
 
 /// 合并多首相同歌曲（按音质排序）
@@ -401,50 +356,17 @@ fn merge_songs(mut songs: Vec<Song>) -> Song {
     primary
 }
 
-/// 计算歌曲音质评分
 fn calculate_song_quality_score(song: &Song) -> u32 {
-    let mut score = 0u32;
-    
-    // 比特率分数
-    if let Some(bitrate) = song.bitrate {
-        score += bitrate.min(320);
-    }
-    
-    // 格式分数
-    let format = song.src.extension()
+    let format = song.src
+        .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("unknown");
-    
-    score += match format.to_lowercase().as_str() {
-        "flac" => 500,
-        "wav" | "aiff" => 400,
-        "aac" | "m4a" => 300,
-        "mp3" => 200,
-        "ogg" => 250,
-        "wma" => 150,
-        _ => 100,
-    };
-    
-    // 采样率分数
-    if let Some(sample_rate) = song.sample_rate {
-        score += (sample_rate / 100).min(480);
-    }
-    
-    // 时长分数
-    if let Some(duration) = song.duration {
-        if duration > 180.0 {
-            score += 100;
-        } else if duration > 60.0 {
-            score += 50;
-        }
-    }
-    
-    score
+    utils::calculate_audio_quality_score(song.bitrate, format, song.sample_rate, song.duration)
 }
 
 #[tauri::command]
 fn get_artist_by_id(artist_id: u32) -> Result<Artist, String> {
-    let artist_cache = ARTIST_CACHE.lock().unwrap();
+    let artist_cache = ARTIST_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     artist_cache
         .values()
         .find(|artist| artist.id == artist_id)
@@ -454,7 +376,7 @@ fn get_artist_by_id(artist_id: u32) -> Result<Artist, String> {
 
 #[tauri::command]
 fn get_album_by_id(album_id: u32) -> Result<Album, String> {
-    let album_cache = ALBUM_CACHE.lock().unwrap();
+    let album_cache = ALBUM_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     album_cache
         .values()
         .find(|album| album.id == album_id)
@@ -464,7 +386,7 @@ fn get_album_by_id(album_id: u32) -> Result<Album, String> {
 
 #[tauri::command]
 fn get_artists_songs_by_id(artist_id: u32) -> Result<Vec<Song>, String> {
-    let artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap();
+    let artist_songs_map = ARTIST_SONGS_MAP.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     let songs = artist_songs_map.get(&artist_id).cloned().unwrap_or_default();
     // 执行去重合并
     let deduplicated = deduplicate_songs(songs);
@@ -473,7 +395,7 @@ fn get_artists_songs_by_id(artist_id: u32) -> Result<Vec<Song>, String> {
 
 #[tauri::command]
 fn get_albums_songs_by_id(album_id: u32) -> Result<Vec<Song>, String> {
-    let album_songs_map = ALBUM_SONGS_MAP.lock().unwrap();
+    let album_songs_map = ALBUM_SONGS_MAP.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     let songs = album_songs_map.get(&album_id).cloned().unwrap_or_default();
     // 执行去重合并
     let deduplicated = deduplicate_songs(songs);
@@ -690,8 +612,8 @@ fn parse_music_file(file: PathBuf) -> Result<Song, String> {
     };
     
     {
-        let mut artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap();
-        let mut album_songs_map = ALBUM_SONGS_MAP.lock().unwrap();
+        let mut artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
+        let mut album_songs_map = ALBUM_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
 
         for artist in &song.ar {
             artist_songs_map
@@ -710,24 +632,24 @@ fn parse_music_file(file: PathBuf) -> Result<Song, String> {
 
 // 缓存音乐列表
 fn cache_music_list(dir: PathBuf, songs: Vec<Song>) {
-    MUSIC_CACHE.lock().unwrap().insert(dir, songs);
+    MUSIC_CACHE.lock().unwrap_or_else(|e| e.into_inner()).insert(dir, songs);
 }
 
 #[tauri::command]
 fn refresh_music_cache() -> Result<(), String> {
     // 重置ID计数器
-    *SONG_ID_COUNTER.lock().unwrap() = 0;
-    *ARTIST_ID_COUNTER.lock().unwrap() = 0;
-    *ALBUM_ID_COUNTER.lock().unwrap() = 0;
+    *SONG_ID_COUNTER.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
+    *ARTIST_ID_COUNTER.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
+    *ALBUM_ID_COUNTER.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
 
     // 清空音乐、艺术家和专辑的缓存
-    MUSIC_CACHE.lock().unwrap().clear();
-    ARTIST_CACHE.lock().unwrap().clear();
-    ALBUM_CACHE.lock().unwrap().clear();
-    ARTIST_SONGS_MAP.lock().unwrap().clear();
-    ALBUM_SONGS_MAP.lock().unwrap().clear();
+    MUSIC_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
+    ARTIST_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
+    ALBUM_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
+    ARTIST_SONGS_MAP.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
+    ALBUM_SONGS_MAP.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
 
-    let music_dirs = MUSIC_DIRS.lock().unwrap();
+    let music_dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     let mut new_cache = HashMap::new();
 
     for dir in &*music_dirs {
@@ -763,7 +685,7 @@ fn refresh_music_cache() -> Result<(), String> {
         }
     }
 
-    *MUSIC_CACHE.lock().unwrap() = new_cache;
+    *MUSIC_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = new_cache;
     Ok(())
 }
 
@@ -825,63 +747,30 @@ impl Song {
 }
 
 fn next_song_id() -> u32 {
-    let mut id = SONG_ID_COUNTER.lock().unwrap();
+    let mut id = SONG_ID_COUNTER.lock().unwrap_or_else(|e| e.into_inner());
     *id += 1;
     *id
 }
 
 fn next_artist_id() -> u32 {
-    let mut id = ARTIST_ID_COUNTER.lock().unwrap();
+    let mut id = ARTIST_ID_COUNTER.lock().unwrap_or_else(|e| e.into_inner());
     *id += 1;
     *id
 }
 
 fn next_album_id() -> u32 {
-    let mut id = ALBUM_ID_COUNTER.lock().unwrap();
+    let mut id = ALBUM_ID_COUNTER.lock().unwrap_or_else(|e| e.into_inner());
     *id += 1;
     *id
 }
 
-/// 计算音质评分
 fn calculate_quality_score(
     bitrate: Option<u32>,
     format: &str,
     sample_rate: Option<u32>,
     duration: Option<f64>,
 ) -> u32 {
-    let mut score = 0u32;
-    
-    // 比特率分数 (最高320分)
-    if let Some(bitrate) = bitrate {
-        score += bitrate.min(320);
-    }
-    
-    // 格式分数 (无损格式优先)
-    score += match format.to_lowercase().as_str() {
-        "flac" => 500,
-        "wav" | "aiff" => 400,
-        "aac" | "m4a" => 300,
-        "mp3" => 200,
-        "ogg" => 250,
-        "wma" => 150,
-        _ => 100,
-    };
-    
-    // 采样率分数 (最高480分，48kHz)
-    if let Some(sample_rate) = sample_rate {
-        score += (sample_rate / 100).min(480);
-    }
-    
-    // 时长分数 (完整曲目优先，最高100分)
-    if let Some(duration) = duration {
-        if duration > 180.0 { // 超过3分钟
-            score += 100;
-        } else if duration > 60.0 { // 超过1分钟
-            score += 50;
-        }
-    }
-    
-    score
+    utils::calculate_audio_quality_score(bitrate, format, sample_rate, duration)
 }
 
 // 独立的方法，用于添加用户音乐文件夹
@@ -976,14 +865,14 @@ fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
     let max_song_id = cache.songs.iter().map(|s| s.id).max().unwrap_or(0);
     let max_artist_id = cache.artists.iter().map(|a| a.id).max().unwrap_or(0);
     let max_album_id = cache.albums.iter().map(|a| a.id).max().unwrap_or(0);
-    
-    *SONG_ID_COUNTER.lock().unwrap() = max_song_id;
-    *ARTIST_ID_COUNTER.lock().unwrap() = max_artist_id;
-    *ALBUM_ID_COUNTER.lock().unwrap() = max_album_id;
-    
+
+    *SONG_ID_COUNTER.lock().unwrap_or_else(|e| e.into_inner()) = max_song_id;
+    *ARTIST_ID_COUNTER.lock().unwrap_or_else(|e| e.into_inner()) = max_artist_id;
+    *ALBUM_ID_COUNTER.lock().unwrap_or_else(|e| e.into_inner()) = max_album_id;
+
     // 重建艺术家缓存
     {
-        let mut artist_cache = ARTIST_CACHE.lock().unwrap();
+        let mut artist_cache = ARTIST_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         artist_cache.clear();
         for artist in &cache.artists {
             artist_cache.insert(artist.name.clone(), Artist {
@@ -993,10 +882,10 @@ fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
             });
         }
     }
-    
+
     // 重建专辑缓存
     {
-        let mut album_cache = ALBUM_CACHE.lock().unwrap();
+        let mut album_cache = ALBUM_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         album_cache.clear();
         for album in &cache.albums {
             album_cache.insert(album.name.clone(), Album {
@@ -1006,12 +895,12 @@ fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
             });
         }
     }
-    
+
     // 重建歌曲缓存和映射关系
     {
-        let mut music_cache = MUSIC_CACHE.lock().unwrap();
-        let mut artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap();
-        let mut album_songs_map = ALBUM_SONGS_MAP.lock().unwrap();
+        let mut music_cache = MUSIC_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        let mut artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
+        let mut album_songs_map = ALBUM_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
         
         music_cache.clear();
         artist_songs_map.clear();
@@ -1028,11 +917,11 @@ fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
             // 查找艺术家和专辑
             let artists: Vec<Artist> = cached_song.artists.iter()
                 .filter_map(|name| {
-                    ARTIST_CACHE.lock().unwrap().get(name).cloned()
+                    ARTIST_CACHE.lock().unwrap_or_else(|e| e.into_inner()).get(name).cloned()
                 })
                 .collect();
-            
-            let album = ALBUM_CACHE.lock().unwrap()
+
+            let album = ALBUM_CACHE.lock().unwrap_or_else(|e| e.into_inner())
                 .get(&cached_song.album)
                 .cloned()
                 .unwrap_or_else(|| Album {
@@ -1172,17 +1061,12 @@ fn save_to_persistent_cache() {
 // 从内存缓存构建持久化缓存
 fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
     use music_library_cache::{CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint};
-    use std::time::{SystemTime, UNIX_EPOCH};
-    
+    let now = utils::current_timestamp();
     let mut cache = MusicLibraryCacheData::new();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    
+
     // 复制艺术家
     {
-        let artist_cache = ARTIST_CACHE.lock().unwrap();
+        let artist_cache = ARTIST_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         for (_, artist) in artist_cache.iter() {
             cache.artists.push(CachedArtist {
                 id: artist.id,
@@ -1194,7 +1078,7 @@ fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
     
     // 复制专辑
     {
-        let album_cache = ALBUM_CACHE.lock().unwrap();
+        let album_cache = ALBUM_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         for (_, album) in album_cache.iter() {
             cache.albums.push(CachedAlbum {
                 id: album.id,
@@ -1206,7 +1090,7 @@ fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
     
     // 复制歌曲
     {
-        let music_cache = MUSIC_CACHE.lock().unwrap();
+        let music_cache = MUSIC_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         for (_, songs) in music_cache.iter() {
             for song in songs {
                 let fingerprint = match FileFingerprint::from_path(&song.src) {
@@ -1239,7 +1123,7 @@ fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
     
     // 复制映射关系
     {
-        let artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap();
+        let artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
         for (artist_id, songs) in artist_songs_map.iter() {
             cache.artist_songs_map.insert(
                 *artist_id,
@@ -1249,7 +1133,7 @@ fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
     }
     
     {
-        let album_songs_map = ALBUM_SONGS_MAP.lock().unwrap();
+        let album_songs_map = ALBUM_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
         for (album_id, songs) in album_songs_map.iter() {
             cache.album_songs_map.insert(
                 *album_id,
@@ -1383,7 +1267,7 @@ fn get_album_cover(album_id: u32) -> Result<tauri::ipc::Response, String> {
     PerformanceMonitor::start_timer(&format!("album_cover_origin_{}", album_id));
     
     let result = (|| {
-        let cache = MUSIC_CACHE.lock().unwrap();
+        let cache = MUSIC_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
         for songs in cache.values() {
             for song in songs {
                 if song.al.id == album_id {
@@ -1423,7 +1307,7 @@ async fn get_music_file(song_id: u32) -> Result<tauri::ipc::Response, String> {
 
     // 查找具有匹配 song_id 的歌曲，并立即释放锁
     let song_path = {
-        let cache = MUSIC_CACHE.lock().unwrap();
+        let cache = MUSIC_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
         println!("Cache locked, searching for song...");
         cache.values().flatten().find_map(|s| {
             if s.id == song_id {
@@ -1466,7 +1350,7 @@ async fn get_music_file(song_id: u32) -> Result<tauri::ipc::Response, String> {
 fn get_all_music_dirs() -> Result<Vec<String>, String> {
     // 返回用户手动添加的音乐目录，而不是缓存中的所有目录
     // 这样可以避免子目录被显示为独立的文件夹
-    let music_dirs = MUSIC_DIRS.lock().unwrap();
+    let music_dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     let dirs: Vec<String> = music_dirs
         .iter()
         .map(|path| path.display().to_string())
@@ -1477,10 +1361,10 @@ fn get_all_music_dirs() -> Result<Vec<String>, String> {
 #[tauri::command]
 fn remove_music_dirs(dirs_to_remove: Vec<String>) -> Result<(), String> {
     {
-        let mut music_dirs = MUSIC_DIRS.lock().unwrap();
+        let mut music_dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
         music_dirs.retain(|dir| !dirs_to_remove.contains(&dir.display().to_string()));
 
-        let mut cache = MUSIC_CACHE.lock().unwrap();
+        let mut cache = MUSIC_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
         for dir_str in dirs_to_remove {
             let dir = PathBuf::from(dir_str);
             cache.remove(&dir);
@@ -1494,7 +1378,7 @@ fn remove_music_dirs(dirs_to_remove: Vec<String>) -> Result<(), String> {
 // 保存音乐目录到磁盘
 fn save_music_dirs_to_disk() -> Result<(), String> {
     let dirs_clone = {
-        let dirs = MUSIC_DIRS.lock().unwrap();
+        let dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
         dirs.clone()
     };
     let cache_dir = get_cache_dir().map_err(|e| e.to_string())?;
@@ -1540,7 +1424,7 @@ fn load_music_dirs_from_disk() -> Result<(), String> {
     } else {
         let file = fs::File::open(&file_path).map_err(|e| e.to_string())?;
         let dirs: Vec<PathBuf> = serde_json::from_reader(file).map_err(|e| e.to_string())?;
-        let mut music_dirs = MUSIC_DIRS.lock().unwrap();
+        let mut music_dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
         *music_dirs = dirs;
     }
     Ok(())
@@ -1548,8 +1432,14 @@ fn load_music_dirs_from_disk() -> Result<(), String> {
 
 #[tauri::command]
 fn add_music_dirs(new_dirs: Vec<String>) -> Result<(), String> {
+    for dir in &new_dirs {
+        let path = PathBuf::from(dir);
+        if !path.exists() {
+            return Err(format!("Music directory does not exist: {}", dir));
+        }
+    }
     {
-        let mut music_dirs = MUSIC_DIRS.lock().unwrap();
+        let mut music_dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
         music_dirs.extend(new_dirs.iter().map(PathBuf::from));
     }
     save_music_dirs_to_disk();
@@ -1644,15 +1534,15 @@ fn reset_all_data() -> Result<(), String> {
     let cache_dir = get_cache_dir()?;
 
     // 1. 清空内存缓存
-    *SONG_ID_COUNTER.lock().unwrap() = 0;
-    *ARTIST_ID_COUNTER.lock().unwrap() = 0;
-    *ALBUM_ID_COUNTER.lock().unwrap() = 0;
-    MUSIC_CACHE.lock().unwrap().clear();
-    ARTIST_CACHE.lock().unwrap().clear();
-    ALBUM_CACHE.lock().unwrap().clear();
-    ARTIST_SONGS_MAP.lock().unwrap().clear();
-    ALBUM_SONGS_MAP.lock().unwrap().clear();
-    MUSIC_DIRS.lock().unwrap().clear();
+    *SONG_ID_COUNTER.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
+    *ARTIST_ID_COUNTER.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
+    *ALBUM_ID_COUNTER.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
+    MUSIC_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
+    ARTIST_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
+    ALBUM_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
+    ARTIST_SONGS_MAP.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
+    ALBUM_SONGS_MAP.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
+    MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
 
     // 2. 删除缓存目录中的所有文件
     if cache_dir.exists() {
@@ -1675,7 +1565,7 @@ fn reset_all_data() -> Result<(), String> {
 // 新增的关闭应用的方法
 #[tauri::command]
 fn close_app(window: tauri::Window) {
-    window.close().unwrap();
+    let _ = window.close();
 }
 
 #[tauri::command]

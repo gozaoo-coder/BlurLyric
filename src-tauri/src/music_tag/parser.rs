@@ -373,7 +373,7 @@ impl MetadataParser {
 
         Some(Picture {
             mime_type,
-            picture_type: unsafe { std::mem::transmute(picture_type) },
+            picture_type: PictureType::from(picture_type),
             description,
             data: picture_data,
         })
@@ -775,7 +775,7 @@ impl MetadataParser {
 
         Some(Picture {
             mime_type,
-            picture_type: unsafe { std::mem::transmute(picture_type) },
+            picture_type: PictureType::from(picture_type),
             description,
             data: picture_data,
         })

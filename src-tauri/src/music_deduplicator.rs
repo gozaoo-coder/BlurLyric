@@ -8,6 +8,7 @@ use crate::music_library_cache::{CachedSongMetadata, TrackSource};
 use crate::music_tag::AudioFormat;
 use std::collections::HashMap;
 use std::path::Path;
+use crate::common::utils;
 
 /// 音乐指纹（用于去重）
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -43,19 +44,8 @@ impl TrackFingerprint {
     }
 }
 
-/// 标准化字符串（用于生成指纹）
 fn normalize_string(s: &str) -> String {
-    s.to_lowercase()
-        .trim()
-        .replace(" ", "")
-        .replace("_", "")
-        .replace("-", "")
-        .replace("'", "")
-        .replace("\"", "")
-        .replace("(", "")
-        .replace(")", "")
-        .replace("[", "")
-        .replace("]", "")
+    utils::normalize_for_matching(s)
 }
 
 /// 音乐去重器

@@ -54,6 +54,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use once_cell::sync::Lazy;
+use crate::common::utils;
 
 /// 缓存池类型
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -569,21 +570,14 @@ pub struct ResourceCacheInfo {
     pub preference_pool: ResourcePoolStats,
 }
 
-/// 获取资源缓存目录
 fn get_resource_cache_dir() -> Result<PathBuf, String> {
-    let path = dirs::cache_dir().ok_or("Cannot get cache directory")?;
-    let mut path = path;
-    path.push("com.blurlyric.app");
-    path.push("resource_cache");
+    let path = utils::get_base_cache_dir()?.join(crate::common::RESOURCE_CACHE_SUBDIR);
+    utils::ensure_cache_dir(&path)?;
     Ok(path)
 }
 
-/// 获取当前时间戳
 fn current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+    utils::current_timestamp()
 }
 
 // ========== Tauri IPC 命令 ==========
@@ -705,12 +699,15 @@ pub fn set_resource_cache_pool_sizes(temp_size: u64, preference_size: u64) -> Re
 #[tauri::command]
 pub fn read_cached_file(path: String) -> Result<Vec<u8>, String> {
     let path = PathBuf::from(&path);
-    
-    if !path.exists() {
+    let cache_dir = utils::get_base_cache_dir()?;
+
+    let validated = utils::validate_path_within_base(&path, &cache_dir)?;
+
+    if !validated.exists() {
         return Err(format!("Cache file not found: {}", path.display()));
     }
-    
-    fs::read(&path).map_err(|e| format!("Failed to read cache file: {}", e))
+
+    fs::read(&validated).map_err(|e| format!("Failed to read cache file: {}", e))
 }
 
 // ========== 向后兼容的类型别名（将在未来版本移除） ==========
