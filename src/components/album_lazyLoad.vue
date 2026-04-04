@@ -6,12 +6,16 @@
                 <LazyLoadCoverImage :id="album.id"></LazyLoadCoverImage>
             </div>
         </div>
-        <div>
-
+        <div class="album-name-container" ref="nameContainer">
+            <h3 
+                class="album-name" 
+                :class="{ 'is-overflow': isOverflow }"
+                @mouseenter="handleMouseEnter"
+                @mouseleave="handleMouseLeave"
+            >
+                <span ref="nameText" class="name-text" :style="textStyle">{{ album.name }}</span>
+            </h3>
         </div>
-        <h3>
-            {{ album.name }}
-        </h3>
     </div>
 </template>
 
@@ -28,7 +32,10 @@ export default {
     },
     data() {
         return {
-            show: this.alwaysShow
+            show: this.alwaysShow,
+            isOverflow: false,
+            isHovering: false,
+            textStyle: {}
         }
     },
     components: {
@@ -47,15 +54,46 @@ export default {
             if (outOfScreenFront == false && outOfScreenHead == false) {
                 this.show = true
             }
+        },
+        checkOverflow() {
+            if (this.$refs.nameText && this.$refs.nameContainer) {
+                const textEl = this.$refs.nameText
+                const containerEl = this.$refs.nameContainer
+                this.isOverflow = textEl.scrollWidth > containerEl.clientWidth
+            }
+        },
+        handleMouseEnter() {
+            if (this.isOverflow && this.$refs.nameText && this.$refs.nameContainer) {
+                this.isHovering = true
+                const textEl = this.$refs.nameText
+                const containerEl = this.$refs.nameContainer
+                const overflowWidth = textEl.scrollWidth - containerEl.clientWidth
+                if (overflowWidth > 0) {
+                    this.textStyle = {
+                        '--scroll-distance': `-${overflowWidth + 16}px`,
+                        animation: 'marquee 4s ease-in-out infinite alternate'
+                    }
+                }
+            }
+        },
+        handleMouseLeave() {
+            this.isHovering = false
+            this.textStyle = {}
         }
     },
     mounted(){
         if (this.alwaysShow) {
             this.show = true
+            this.$nextTick(() => {
+                this.checkOverflow()
+            })
             return
         }
         requestAnimationFrame(()=>{
             this.updateShow()
+            this.$nextTick(() => {
+                this.checkOverflow()
+            })
         })
     },
     inject: ['scrollState'],
@@ -68,6 +106,11 @@ export default {
                 })
             },
             deep: true
+        },
+        'album.name'() {
+            this.$nextTick(() => {
+                this.checkOverflow()
+            })
         }
     }
 }
@@ -94,6 +137,39 @@ export default {
     height: 100%;
     transform-origin: 50% 100%;
     transform: scale(0.85);
+}
+
+.album-name-container {
+    margin-top: 8px;
+    overflow: hidden;
+}
+
+.album-name {
+    font-size: 0.9em;
+    font-weight: 500;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fontColor-content-normal);
+}
+
+.album-name.is-overflow {
+    cursor: pointer;
+}
+
+.album-name .name-text {
+    display: inline-block;
+    white-space: nowrap;
+}
+
+@keyframes marquee {
+    0% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(var(--scroll-distance, 0));
+    }
 }
 
 </style>

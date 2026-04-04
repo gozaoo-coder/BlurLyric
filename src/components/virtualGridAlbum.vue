@@ -4,20 +4,19 @@
       class="virtual-grid-content" 
       :style="{ height: `${totalHeight}px` }"
     >
-      <template v-for="(item, idx) in items" :key="idx">
-        <div
-          v-if="shouldRender(idx)"
-          class="virtual-grid-item"
-          :style="getItemStyle(idx)"
-        >
-          <slot 
-            name="item" 
-            :item="item" 
-            :index="idx"
-            :isVisible="true"
-          ></slot>
-        </div>
-      </template>
+      <div
+        v-for="item in visibleItemsComputed"
+        :key="item.index"
+        class="virtual-grid-item"
+        :style="getItemStyle(item.index)"
+      >
+        <slot 
+          name="item" 
+          :item="items[item.index]" 
+          :index="item.index"
+          :isVisible="true"
+        ></slot>
+      </div>
     </div>
   </div>
 </template>
@@ -55,24 +54,12 @@ export default {
     }
   },
   inject: ['scrollState'],
-  emits: ['scrollChange'],
-  setup(props, { emit }) {
+  setup(props) {
     const containerRef = ref(null);
     const containerWidth = ref(800);
     const scrollState = inject('scrollState');
 
     const totalCount = computed(() => props.items.length);
-
-    const virtualListOptions = useGridVirtualList({
-      scrollState,
-      containerWidth,
-      itemHeight: props.itemHeight,
-      gapX: props.gapX,
-      gapY: props.gapY,
-      bufferRows: props.bufferRows,
-      totalCount,
-      minColumnWidth: props.minColumnWidth
-    });
 
     const {
       columnCount,
@@ -88,7 +75,32 @@ export default {
       offsetY,
       shouldRender,
       getItemStyle
-    } = virtualListOptions;
+    } = useGridVirtualList({
+      scrollState,
+      containerWidth,
+      itemHeight: props.itemHeight,
+      gapX: props.gapX,
+      gapY: props.gapY,
+      bufferRows: props.bufferRows,
+      totalCount,
+      minColumnWidth: props.minColumnWidth
+    });
+
+    const visibleItemsComputed = computed(() => {
+      const result = [];
+      const start = startIndex.value;
+      const end = endIndex.value;
+      const cols = columnCount.value;
+      
+      for (let i = start; i < end; i++) {
+        result.push({
+          index: i,
+          row: Math.floor(i / cols),
+          col: i % cols
+        });
+      }
+      return result;
+    });
 
     const updateContainerWidth = () => {
       if (containerRef.value && containerRef.value.offsetWidth > 0) {
@@ -111,18 +123,12 @@ export default {
       requestAnimationFrame(updateContainerWidth);
     }, { immediate: true });
 
-    watch(scrollState, (newVal) => {
-      emit('scrollChange', newVal);
-    }, { deep: true });
-
     return {
       containerRef,
-      containerWidth,
       columnCount,
-      visibleItems,
+      visibleItemsComputed,
       totalHeight,
       getItemStyle,
-      shouldRender,
       startIndex,
       endIndex
     };
