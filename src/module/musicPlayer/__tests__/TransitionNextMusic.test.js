@@ -13,6 +13,7 @@ function createMockAudioEngine(overrides = {}) {
         volume: 0.8,
         destroy: vi.fn(),
         play: vi.fn(),
+        removeAllListeners: vi.fn(),
         ...overrides,
     };
 }

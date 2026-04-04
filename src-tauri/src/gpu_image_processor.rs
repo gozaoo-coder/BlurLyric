@@ -175,12 +175,16 @@ impl GpuImageProcessor {
         pollster::block_on(Self::new())
     }
 
-    /// 调整图片大小
-    pub fn resize(&self, image: &DynamicImage, new_width: u32, new_height: u32) -> Result<DynamicImage, String> {
-        // 确保尺寸至少为1
+    /// 提交GPU缩放命令（同步部分：纹理创建、渲染、拷贝）
+    fn submit_resize_commands(
+        &self,
+        image: &DynamicImage,
+        new_width: u32,
+        new_height: u32,
+    ) -> Result<(wgpu::Buffer, u32, u32, u32), String> {
         let new_width = new_width.max(1);
         let new_height = new_height.max(1);
-        
+
         let rgba = image.to_rgba8();
         let (src_width, src_height) = rgba.dimensions();
 
@@ -365,7 +369,38 @@ impl GpuImageProcessor {
 
         self.queue.submit(std::iter::once(encoder.finish()));
 
-        // 映射缓冲区并读取数据
+        Ok((output_buffer, bytes_per_row_aligned, new_width, new_height))
+    }
+
+    fn read_mapped_buffer(
+        output_buffer: wgpu::Buffer,
+        bytes_per_row_aligned: u32,
+        new_width: u32,
+        new_height: u32,
+    ) -> Result<DynamicImage, String> {
+        let data = output_buffer.slice(..).get_mapped_range();
+
+        let mut image_data = Vec::with_capacity((new_width * new_height * 4) as usize);
+        for row in (0..new_height).rev() {
+            let row_start = (row * bytes_per_row_aligned) as usize;
+            let row_end = row_start + (new_width * 4) as usize;
+            image_data.extend_from_slice(&data[row_start..row_end]);
+        }
+
+        let result_image = RgbaImage::from_raw(new_width, new_height, image_data)
+            .ok_or("Failed to create image from buffer")?;
+
+        drop(data);
+        output_buffer.unmap();
+
+        Ok(DynamicImage::ImageRgba8(result_image))
+    }
+
+    /// 调整图片大小（同步版本，使用阻塞poll）
+    pub fn resize(&self, image: &DynamicImage, new_width: u32, new_height: u32) -> Result<DynamicImage, String> {
+        let (output_buffer, bytes_per_row_aligned, new_width, new_height) =
+            self.submit_resize_commands(image, new_width, new_height)?;
+
         let buffer_slice = output_buffer.slice(..);
         buffer_slice.map_async(wgpu::MapMode::Read, |result| {
             if let Err(e) = result {
@@ -375,22 +410,37 @@ impl GpuImageProcessor {
 
         self.device.poll(wgpu::Maintain::Wait);
 
-        let data = buffer_slice.get_mapped_range();
-        
-        let mut image_data = Vec::with_capacity((new_width * new_height * 4) as usize);
-        for row in (0..new_height).rev() {
-            let row_start = (row * bytes_per_row_aligned) as usize;
-            let row_end = row_start + (new_width * 4) as usize;
-            image_data.extend_from_slice(&data[row_start..row_end]);
+        Self::read_mapped_buffer(output_buffer, bytes_per_row_aligned, new_width, new_height)
+    }
+
+    /// 异步调整图片大小（非阻塞，适用于高并发场景）
+    pub async fn resize_async(
+        &self,
+        image: &DynamicImage,
+        new_width: u32,
+        new_height: u32,
+    ) -> Result<DynamicImage, String> {
+        let (output_buffer, bytes_per_row_aligned, new_width, new_height) =
+            self.submit_resize_commands(image, new_width, new_height)?;
+
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        let buffer_slice = output_buffer.slice(..);
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+
+        loop {
+            self.device.poll(wgpu::Maintain::Poll);
+            if let Ok(result) = rx.try_recv() {
+                if let Err(e) = result {
+                    return Err(format!("Failed to map GPU buffer: {}", e));
+                }
+                break;
+            }
+            tokio::task::yield_now().await;
         }
-        
-        let result_image = RgbaImage::from_raw(new_width, new_height, image_data)
-            .ok_or("Failed to create image from buffer")?;
 
-        drop(data);
-        output_buffer.unmap();
-
-        Ok(DynamicImage::ImageRgba8(result_image))
+        Self::read_mapped_buffer(output_buffer, bytes_per_row_aligned, new_width, new_height)
     }
 
     /// 检查 GPU 是否可用
@@ -427,13 +477,12 @@ pub fn get_gpu_processor() -> Option<&'static Arc<GpuImageProcessor>> {
     GPU_PROCESSOR.get()
 }
 
-/// 使用 GPU 调整图片大小（带自动降级）
+/// 使用 GPU 调整图片大小（带自动降级，同步版本）
 pub fn resize_with_gpu_fallback(
     image: &DynamicImage,
     new_width: u32,
     new_height: u32,
 ) -> Result<DynamicImage, String> {
-    // 尝试使用 GPU
     if let Some(gpu) = get_gpu_processor() {
         match gpu.resize(image, new_width, new_height) {
             Ok(result) => {
@@ -446,9 +495,32 @@ pub fn resize_with_gpu_fallback(
         }
     }
 
-    // CPU 降级处理
     tracing::debug!(from_w = image.width(), from_h = image.height(), to_w = new_width, to_h = new_height, "Using CPU resize");
-    
+
+    use image::imageops::FilterType;
+    Ok(image.resize(new_width, new_height, FilterType::Lanczos3))
+}
+
+/// 使用 GPU 异步调整图片大小（带自动降级，异步非阻塞版本）
+pub async fn resize_with_gpu_fallback_async(
+    image: &DynamicImage,
+    new_width: u32,
+    new_height: u32,
+) -> Result<DynamicImage, String> {
+    if let Some(gpu) = get_gpu_processor() {
+        match gpu.resize_async(image, new_width, new_height).await {
+            Ok(result) => {
+                tracing::debug!(from_w = image.width(), from_h = image.height(), to_w = new_width, to_h = new_height, "GPU async resize succeeded");
+                return Ok(result);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "GPU async resize failed, falling back to CPU");
+            }
+        }
+    }
+
+    tracing::debug!(from_w = image.width(), from_h = image.height(), to_w = new_width, to_h = new_height, "Using CPU resize (async fallback)");
+
     use image::imageops::FilterType;
     Ok(image.resize(new_width, new_height, FilterType::Lanczos3))
 }

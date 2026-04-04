@@ -1,21 +1,34 @@
 /**
- * Lazy Loader - 按需加载和缓存管理模块
+ * Lazy Loader - 按需加载和引用计数缓存管理模块
  * 
- * 实现资源的按需加载、自动缓存和智能预加载
+ * 核心机制：
+ * - 引用计数：每个资源记录被多少个DOM节点引用
+ * - DOM追踪：记录调用者的CSS选择器路径（树状结构）
+ * - 延迟回收：引用计数归零后等待10秒，期间有新引用则取消回收
  */
 
 import { invoke } from '@tauri-apps/api/core';
 
+const RECLAIM_DELAY_MS = 10 * 1000;
+
+class RefCountedEntry {
+  constructor(data) {
+    this.data = data;
+    this.refCount = 0;
+    this.consumers = new Map();
+    this.releaseTimer = null;
+    this.timestamp = Date.now();
+  }
+}
+
 class LazyLoader {
   #cache = new Map();
   #loadingPromises = new Map();
-  #maxCacheSize = 100;
-  #cacheExpiry = 30 * 60 * 1000; // 30分钟
-  
+
   constructor() {
     this.init();
   }
-  
+
   async init() {
     try {
       const isValid = await invoke('is_library_cache_valid');
@@ -24,169 +37,243 @@ class LazyLoader {
       console.warn('Library cache status check failed:', e);
     }
   }
-  
-  /**
-   * 生成缓存键
-   */
+
   #getCacheKey(type, id) {
     return `${type}_${id}`;
   }
-  
-  /**
-   * 检查缓存是否有效
-   */
+
+  #getDomSelector(element) {
+    if (!element || !element.tagName) return 'unknown';
+    const parts = [];
+    let current = element;
+    while (current && current !== document.body) {
+      let selector = current.tagName.toLowerCase();
+      if (current.id) {
+        selector += `#${current.id}`;
+      } else if (current.className && typeof current.className === 'string') {
+        const classes = current.className.split(/\s+/).filter(Boolean).slice(0, 2);
+        if (classes.length > 0) selector += `.${classes.join('.')}`;
+      }
+      const parent = current.parentElement;
+      if (parent) {
+        const siblings = Array.from(parent.children).filter(c => c.tagName === current.tagName);
+        if (siblings.length > 1) {
+          const idx = siblings.indexOf(current) + 1;
+          selector += `:nth-child(${idx})`;
+        }
+      }
+      parts.unshift(selector);
+      current = parent;
+      if (parts.length >= 4) break;
+    }
+    return parts.join(' > ');
+  }
+
+  #startReleaseTimer(key) {
+    const entry = this.#cache.get(key);
+    if (!entry) return;
+
+    this.#cancelReleaseTimer(key);
+
+    entry.releaseTimer = setTimeout(() => {
+      if (entry.refCount <= 0) {
+        this.#reclaim(key);
+      }
+    }, RECLAIM_DELAY_MS);
+  }
+
+  #cancelReleaseTimer(key) {
+    const entry = this.#cache.get(key);
+    if (entry?.releaseTimer) {
+      clearTimeout(entry.releaseTimer);
+      entry.releaseTimer = null;
+    }
+  }
+
+  #reclaim(key) {
+    const entry = this.#cache.get(key);
+    if (!entry) return;
+
+    try {
+      entry.data.destroyObjectURL?.();
+    } catch (e) {
+      console.warn(`Failed to reclaim resource ${key}:`, e);
+    }
+
+    this.#cache.delete(key);
+    console.log(`Resource reclaimed: ${key}`);
+  }
+
+  acquire(key, domElement) {
+    let entry = this.#cache.get(key);
+
+    if (!entry) return null;
+
+    this.#cancelReleaseTimer(key);
+
+    const selector = this.#getDomSelector(domElement);
+    const prevCount = entry.consumers.get(selector) || 0;
+    entry.consumers.set(selector, prevCount + 1);
+    entry.refCount += 1;
+
+    console.log(`[LazyLoader] acquire ${key} → refCount=${entry.refCount}, consumer=${selector}`);
+
+    return entry.data;
+  }
+
+  release(key, domElement) {
+    const entry = this.#cache.get(key);
+    if (!entry) return;
+
+    const selector = this.#getDomSelector(domElement);
+    const prevCount = entry.consumers.get(selector) || 0;
+
+    if (prevCount <= 1) {
+      entry.consumers.delete(selector);
+    } else {
+      entry.consumers.set(selector, prevCount - 1);
+    }
+
+    entry.refCount = Math.max(0, entry.refCount - 1);
+
+    console.log(`[LazyLoader] release ${key} → refCount=${entry.refCount}, removed=${selector}`);
+
+    if (entry.refCount <= 0) {
+      this.#startReleaseTimer(key);
+    }
+  }
+
   isCached(key) {
-    const cached = this.#cache.get(key);
-    if (!cached) return false;
-    
-    if (Date.now() - cached.timestamp > this.#cacheExpiry) {
-      this.#cache.delete(key);
-      return false;
+    return this.#cache.has(key);
+  }
+
+  getCacheStats() {
+    const entries = [];
+    for (const [key, entry] of this.#cache) {
+      entries.push({
+        key,
+        refCount: entry.refCount,
+        consumers: [...entry.consumers.keys()],
+        hasPendingRelease: entry.releaseTimer !== null,
+        age: Date.now() - entry.timestamp,
+      });
     }
-    
-    return true;
+    return {
+      size: entries.length,
+      entries,
+    };
   }
-  
-  /**
-   * 获取缓存数据
-   */
-  get(key) {
-    const cached = this.#cache.get(key);
-    return cached?.data ?? null;
-  }
-  
-  /**
-   * 设置缓存数据
-   */
-  set(key, data) {
-    if (this.#cache.size >= this.#maxCacheSize) {
-      const firstKey = this.#cache.keys().next().value;
-      this.#cache.delete(firstKey);
-    }
-    
-    this.#cache.set(key, {
-      data,
-      timestamp: Date.now()
-    });
-  }
-  
-  /**
-   * 清除所有缓存
-   */
+
   clearCache() {
-    this.#cache.clear();
+    for (const [key] of this.#cache) {
+      this.#cancelReleaseTimer(key);
+      this.#reclaim(key);
+    }
   }
-  
-  /**
-   * 加载专辑封面
-   */
+
   async loadAlbumCover(albumId, maxResolution = 368) {
     const key = this.#getCacheKey(`cover_${maxResolution}`, albumId);
-    
+
     if (this.isCached(key)) {
-      console.log(`Cover ${albumId} loaded from cache`);
-      return this.get(key);
+      console.log(`Cover ${albumId}@${maxResolution} served from cache`);
+      return this.#cache.get(key).data;
     }
-    
-    // 防止重复请求
+
     if (this.#loadingPromises.has(key)) {
       return this.#loadingPromises.get(key);
     }
-    
+
     const promise = (async () => {
       try {
         const result = await invoke('get_low_quality_album_cover', {
           albumId,
-          maxResolution
+          maxResolution,
         });
-        
+
         const data = {
-          objectURL: URL.createObjectURL(new Blob([result])) ,
-          destroyObjectURL: () => URL.revokeObjectURL(result.objectURL)
+          objectURL: URL.createObjectURL(new Blob([result])),
+          destroyObjectURL: () => URL.revokeObjectURL(data.objectURL),
         };
-        
-        this.set(key, data);
+
+        const entry = new RefCountedEntry(data);
+        this.#cache.set(key, entry);
+
         return data;
       } finally {
         this.#loadingPromises.delete(key);
       }
     })();
-    
+
     this.#loadingPromises.set(key, promise);
     return promise;
   }
-  
-  /**
-   * 加载原始专辑封面
-   */
+
   async loadOriginAlbumCover(albumId) {
     const key = this.#getCacheKey('cover_origin', albumId);
-    
+
     if (this.isCached(key)) {
-      return this.get(key);
+      return this.#cache.get(key).data;
     }
-    
+
     if (this.#loadingPromises.has(key)) {
       return this.#loadingPromises.get(key);
     }
-    
+
     const promise = (async () => {
       try {
         const result = await invoke('get_album_cover', { albumId });
-        
+
         const data = {
           objectURL: URL.createObjectURL(new Blob([result])),
-          destroyObjectURL: () => URL.revokeObjectURL(result.objectURL)
+          destroyObjectURL: () => URL.revokeObjectURL(data.objectURL),
         };
-        
-        this.set(key, data);
+
+        const entry = new RefCountedEntry(data);
+        this.#cache.set(key, entry);
+
         return data;
       } finally {
         this.#loadingPromises.delete(key);
       }
     })();
-    
+
     this.#loadingPromises.set(key, promise);
     return promise;
   }
-  
-  /**
-   * 加载音乐文件
-   */
+
   async loadMusicFile(songId) {
     const key = this.#getCacheKey('music', songId);
-    
+
     if (this.isCached(key)) {
-      return this.get(key);
+      return this.#cache.get(key).data;
     }
-    
+
     if (this.#loadingPromises.has(key)) {
       return this.#loadingPromises.get(key);
     }
-    
+
     const promise = (async () => {
       try {
         const result = await invoke('get_music_file', { songId });
-        
+
         const data = {
           objectURL: URL.createObjectURL(new Blob([result])),
-          destroyObjectURL: () => URL.revokeObjectURL(result.objectURL)
+          destroyObjectURL: () => URL.revokeObjectURL(data.objectURL),
         };
-        
-        this.set(key, data);
+
+        const entry = new RefCountedEntry(data);
+        this.#cache.set(key, entry);
+
         return data;
       } finally {
         this.#loadingPromises.delete(key);
       }
     })();
-    
+
     this.#loadingPromises.set(key, promise);
     return promise;
   }
-  
-  /**
-   * 预加载资源
-   */
+
   async preload(resourceType, id) {
     switch (resourceType) {
       case 'cover':
@@ -197,30 +284,16 @@ class LazyLoader {
         console.warn(`Unknown resource type: ${resourceType}`);
     }
   }
-  
-  /**
-   * 批量预加载
-   */
+
   async preloadBatch(items) {
-    const promises = items.map(item => 
+    const promises = items.map(item =>
       this.preload(item.type, item.id).catch(e => {
         console.warn(`Failed to preload ${item.type}_${item.id}:`, e);
         return null;
       })
     );
-    
+
     return Promise.all(promises);
-  }
-  
-  /**
-   * 获取缓存统计
-   */
-  getCacheStats() {
-    return {
-      size: this.#cache.size,
-      maxSize: this.#maxCacheSize,
-      keys: [...this.#cache.keys()]
-    };
   }
 }
 

@@ -295,11 +295,11 @@ export default {
 
                     if (info.offsetX < -100 || info.speedX < -1) {
                         if (navigator.vibrate) navigator.vibrate(50);
-                        p.next()
+                        p.next({ isManual: true })
                     }
                     if (info.offsetX > 100 || info.speedX > 1) {
                         if (navigator.vibrate) navigator.vibrate(50);
-                        p.prev()
+                        p.prev({ isManual: true })
                     }
                     musicControlBar_animeJsCallBack = anime({
                         targets: this.style.musicDetailRender,
@@ -421,7 +421,7 @@ export default {
                     </div>
                 </div>
                 <div v-show="p.state.currentTrack.id != -2" class="control">
-                    <buttom_icon_circleBackground @click="p.prev()">
+                    <buttom_icon_circleBackground @click="p.prev({ isManual: true })">
                         <template #icon>
                             <i class="bi bi-skip-start-fill"></i>
                         </template>
@@ -436,7 +436,7 @@ export default {
                             </div>
                         </template>
                     </buttom_icon_circleBackground>
-                    <buttom_icon_circleBackground @click="p.next()">
+                    <buttom_icon_circleBackground @click="p.next({ isManual: true })">
                         <template #icon>
                             <i class="bi bi-skip-end-fill"></i>
                         </template>
@@ -514,7 +514,7 @@ export default {
                         </button_circle>
 
 
-                        <button_circle @click="p.prev()">
+                        <button_circle @click="p.prev({ isManual: true })">
                             <i class="bi bi-skip-start-fill"></i>
                         </button_circle>
                         <button_circle
@@ -525,7 +525,7 @@ export default {
                                 <i v-if="p.state.playing == false" class="bi bi-play-fill"></i>
                             </div>
                         </button_circle>
-                        <button_circle @click="p.next()">
+                        <button_circle @click="p.next({ isManual: true })">
                             <i class="bi bi-skip-end-fill"></i>
                         </button_circle>
                         <button_circle>

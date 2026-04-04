@@ -57,16 +57,18 @@ class TransitionNextMusic extends TransitionStrategy {
             const oldDuration = oldEngine.duration;
             const oldCurrentTime = oldEngine.currentTime;
 
-            let leastTime;
-            if (options.leastTime !== undefined) {
-                leastTime = options.leastTime;
+            let transitionDuration;
+            if (options.transitionDuration !== undefined) {
+                transitionDuration = options.transitionDuration;
+            } else if (options.leastTime !== undefined) {
+                transitionDuration = options.leastTime;
             } else if (isFinite(oldDuration) && oldDuration > 0) {
-                leastTime = Math.max(100, (oldDuration - oldCurrentTime) * 1000);
+                transitionDuration = Math.max(100, (oldDuration - oldCurrentTime) * 1000);
             } else {
-                leastTime = 1000;
+                transitionDuration = 1000;
             }
 
-            leastTime = Math.max(50, Math.min(leastTime, 15000));
+            transitionDuration = Math.max(50, Math.min(transitionDuration, 15000));
 
             player.switchToIndex(targetIndex);
             
@@ -83,7 +85,7 @@ class TransitionNextMusic extends TransitionStrategy {
                     transitionEngine,
                     0,
                     targetVolume,
-                    leastTime,
+                    transitionDuration,
                     null,
                     null
                 );
@@ -92,7 +94,7 @@ class TransitionNextMusic extends TransitionStrategy {
                     oldEngine,
                     targetVolume,
                     0,
-                    leastTime,
+                    transitionDuration,
                     null,
                     () => {
                         try { oldEngine.destroy(); } catch {}

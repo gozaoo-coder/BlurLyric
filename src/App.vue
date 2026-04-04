@@ -85,7 +85,8 @@ export default {
                 audio: {
                     smartStreamAudioList: true,
                     audioStreamDuration: 7,
-                    audioStateHandlerTPS: 20
+                    audioStateHandlerTPS: 20,
+                    manualTransitionDuration: 3000
                 },
                 ui: {
                     musicDetailFontScale: 1,

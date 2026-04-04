@@ -154,26 +154,27 @@ pub fn get_cache_image_path(cache_dir: &PathBuf, album_id: u32, max_resolution: 
     path
 }
 
-/// 从专辑获取封面数据
+/// 从专辑获取封面数据（使用 O(1) 索引）
 pub fn get_album_cover_data(album_id: u32) -> Result<Vec<u8>, String> {
-    let cache = MUSIC_CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    for songs in cache.values() {
-        for song in songs {
-            if song.al.id == album_id {
-                // 使用新的music_tag模块读取封面
-                let parser = MetadataParser::new();
-                match parser.parse(&song.src) {
-                    Ok(metadata) => {
-                        if let Some(picture) = metadata.front_cover() {
-                            return Ok(picture.data.clone());
-                        }
-                    }
-                    Err(_) => continue,
-                }
-            }
-        }
+    let cover_index = ALBUM_COVER_INDEX
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?;
+
+    let song_path = cover_index
+        .get(&album_id)
+        .cloned()
+        .ok_or_else(|| "Album cover not found".to_string())?;
+
+    drop(cover_index);
+
+    let parser = MetadataParser::new();
+    match parser.parse(&song_path) {
+        Ok(metadata) => metadata
+            .front_cover()
+            .map(|p| p.data.clone())
+            .ok_or_else(|| "No front cover in file".into()),
+        Err(e) => Err(format!("Failed to parse music file: {}", e)),
     }
-    Err("Album cover not found".to_string())
 }
 
 /// 缩放图像到指定最大分辨率

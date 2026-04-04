@@ -36,6 +36,7 @@ class MusicPlayer {
             smartStreamAudioList: true,
             audioStreamDuration: 7,
             audioStateHandlerTPS: 20,
+            manualTransitionDuration: 3000,
             ...(options.config ?? {})
         };
         this.#transitionStrategy = new TransitionNextMusic();
@@ -174,16 +175,28 @@ class MusicPlayer {
         }
     }
 
-    async next(options) {
+    async next(options = {}) {
         if (!this.hasTrack || this.#playlist.length === 0) return;
         const nextIndex = this.#playModeManager.getNextIndex(this.#playlist.currentIndex, this.#playlist.length);
-        await this.switchTo(nextIndex, options);
+        
+        const switchOptions = { ...options };
+        if (options.isManual && this.#config.manualTransitionDuration) {
+            switchOptions.transitionDuration = this.#config.manualTransitionDuration;
+        }
+        
+        await this.switchTo(nextIndex, switchOptions);
     }
 
-    async prev(options) {
+    async prev(options = {}) {
         if (!this.hasTrack || this.#playlist.length === 0) return;
         const prevIndex = this.#playModeManager.getPrevIndex(this.#playlist.currentIndex, this.#playlist.length);
-        await this.switchTo(prevIndex, options);
+        
+        const switchOptions = { ...options };
+        if (options.isManual && this.#config.manualTransitionDuration) {
+            switchOptions.transitionDuration = this.#config.manualTransitionDuration;
+        }
+        
+        await this.switchTo(prevIndex, switchOptions);
     }
 
     async switchTo(targetIndex, options = {}) {
@@ -302,6 +315,9 @@ class MusicPlayer {
 
     _replaceAudioEngine(newEngine) {
         this.#stopTimeUpdateLoop();
+        if (this.#audioEngine) {
+            this.#audioEngine.removeAllListeners();
+        }
         this.#audioEngine = newEngine;
         this.#bindAudioEvents();
     }
@@ -416,8 +432,8 @@ class MusicPlayer {
         try {
             navigator.mediaSession.setActionHandler('play', () => this.play());
             navigator.mediaSession.setActionHandler('pause', () => this.pause());
-            navigator.mediaSession.setActionHandler('previoustrack', () => this.prev());
-            navigator.mediaSession.setActionHandler('nexttrack', () => this.next());
+            navigator.mediaSession.setActionHandler('previoustrack', () => this.prev({ isManual: true }));
+            navigator.mediaSession.setActionHandler('nexttrack', () => this.next({ isManual: true }));
         } catch (e) {
             console.warn('[MusicPlayer] MediaSession setup failed:', e);
             this.#mediaSessionAvailable = false;

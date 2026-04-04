@@ -132,6 +132,23 @@ export default {
             </template>
         </toggle_lineRow>
     </tracksRow>
+    <tracksRow v-if="localConfig.audio.smartStreamAudioList">
+        <div class="slider-row">
+            <div class="slider-info">
+                <i class="bi bi-clock"></i>
+                <span class="slider-label">手动切换过渡时长</span>
+                <span class="slider-value">{{ (localConfig.audio.manualTransitionDuration / 1000).toFixed(1) }}秒</span>
+            </div>
+            <input 
+                type="range" 
+                min="500" 
+                max="10000" 
+                step="500" 
+                v-model.number="localConfig.audio.manualTransitionDuration"
+                class="slider"
+            />
+        </div>
+    </tracksRow>
     <h2>操作偏好</h2>
     <tracksRow>
         <toggle_lineRow v-model="test">
@@ -317,5 +334,70 @@ export default {
     justify-content: flex-end;
     gap: 8px;
     margin-top: 24px;
+}
+
+.slider-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 12px;
+}
+
+.slider-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.slider-info i {
+    font-size: 20px;
+    height: 25px;
+    width: 25px;
+}
+
+.slider-label {
+    font-size: small;
+    flex: 1;
+}
+
+.slider-value {
+    font-size: small;
+    color: var(--themeColor);
+    font-weight: 500;
+}
+
+.slider {
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--backgroundColor-tertiary);
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--themeColor);
+    cursor: pointer;
+    transition: transform 0.15s ease;
+}
+
+.slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--themeColor);
+    cursor: pointer;
+    border: none;
 }
 </style>

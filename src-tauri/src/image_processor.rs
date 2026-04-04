@@ -10,7 +10,7 @@ use tokio::sync::Semaphore;
 use std::time::Instant;
 
 // 引入GPU图像处理器
-use crate::gpu_image_processor::{init_gpu_processor, resize_with_gpu_fallback};
+use crate::gpu_image_processor::{init_gpu_processor, resize_with_gpu_fallback, resize_with_gpu_fallback_async};
 
 // 图片处理配置
 pub struct ImageProcessorConfig {
@@ -19,13 +19,23 @@ pub struct ImageProcessorConfig {
     pub default_filter: FilterType,
 }
 
+fn select_filter_for_resolution(max_resolution: u32) -> FilterType {
+    if max_resolution <= 200 {
+        FilterType::Nearest
+    } else if max_resolution <= 500 {
+        FilterType::Triangle
+    } else {
+        FilterType::Lanczos3
+    }
+}
+
 impl Default for ImageProcessorConfig {
     fn default() -> Self {
         Self {
             max_concurrent_tasks: std::thread::available_parallelism()
                 .map(|n| n.get())
                 .unwrap_or(4),
-            use_gpu: true, // 默认启用GPU加速
+            use_gpu: true,
             default_filter: FilterType::Lanczos3,
         }
     }
@@ -73,15 +83,15 @@ impl ImageProcessor {
     pub fn resize(&self, image: DynamicImage, max_resolution: u32) -> DynamicImage {
         let (width, height) = image.dimensions();
         let scale = f32::max(width as f32, height as f32) / max_resolution as f32;
-        
+
         if scale <= 1.0 {
             return image;
         }
-        
+
         let new_width = (width as f32 / scale) as u32;
         let new_height = (height as f32 / scale) as u32;
-        
-        // 如果GPU可用，使用GPU加速
+        let filter = select_filter_for_resolution(max_resolution);
+
         if self.gpu_initialized {
             match resize_with_gpu_fallback(&image, new_width, new_height) {
                 Ok(result) => return result,
@@ -90,17 +100,35 @@ impl ImageProcessor {
                 }
             }
         }
-        
-        // CPU降级处理
-        image.resize(new_width, new_height, self.config.default_filter)
+
+        image.resize(new_width, new_height, filter)
     }
 
-    /// 异步调整图片大小（使用线程池）
+    /// 异步调整图片大小（GPU异步非阻塞 + CPU线程池降级）
     pub async fn resize_async(
         &self,
         image: DynamicImage,
         max_resolution: u32,
     ) -> Result<DynamicImage, String> {
+        let (width, height) = image.dimensions();
+        let scale = f32::max(width as f32, height as f32) / max_resolution as f32;
+
+        if scale <= 1.0 {
+            return Ok(image);
+        }
+
+        let new_width = (width as f32 / scale) as u32;
+        let new_height = (height as f32 / scale) as u32;
+
+        if self.gpu_initialized {
+            match resize_with_gpu_fallback_async(&image, new_width, new_height).await {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    tracing::warn!(error = %e, "GPU async resize failed, falling back to CPU");
+                }
+            }
+        }
+
         let permit = self
             .semaphore
             .clone()
@@ -108,38 +136,14 @@ impl ImageProcessor {
             .await
             .map_err(|e| format!("Failed to acquire semaphore: {}", e))?;
 
-        let filter = self.config.default_filter;
-        let use_gpu = self.gpu_initialized;
+        let filter = select_filter_for_resolution(max_resolution);
 
-        let result = tokio::task::spawn_blocking(move || {
-            let _permit = permit; // 保持permit直到任务完成
-            let (width, height) = image.dimensions();
-            let scale = f32::max(width as f32, height as f32) / max_resolution as f32;
-
-            if scale <= 1.0 {
-                return Ok(image);
-            }
-            
-            let new_width = (width as f32 / scale) as u32;
-            let new_height = (height as f32 / scale) as u32;
-            
-            // 尝试使用GPU
-            if use_gpu {
-                match resize_with_gpu_fallback(&image, new_width, new_height) {
-                    Ok(result) => return Ok(result),
-                    Err(e) => {
-                        tracing::warn!(error = %e, "GPU resize failed in async context");
-                    }
-                }
-            }
-            
-            // CPU降级
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
             Ok(image.resize(new_width, new_height, filter))
         })
         .await
-        .map_err(|e| format!("JoinError: {:?}", e))?;
-
-        result
+        .map_err(|e| format!("JoinError: {:?}", e))?
     }
 
     /// 批量处理图片
