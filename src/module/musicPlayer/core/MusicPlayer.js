@@ -300,6 +300,12 @@ class MusicPlayer {
         }
     }
 
+    _replaceAudioEngine(newEngine) {
+        this.#stopTimeUpdateLoop();
+        this.#audioEngine = newEngine;
+        this.#bindAudioEvents();
+    }
+
     #bindAudioEvents() {
         if (!this.#audioEngine) return;
         const ae = this.#audioEngine;

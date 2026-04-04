@@ -1,4 +1,5 @@
 import { TransitionStrategy } from './TransitionStrategy';
+import { AudioEngine } from '../core/AudioEngine';
 
 class VolumeFader {
     static fade(audioEngine, fromVolume, toVolume, durationMs, onUpdate, onComplete) {
@@ -68,22 +69,19 @@ class TransitionNextMusic extends TransitionStrategy {
             leastTime = Math.max(50, Math.min(leastTime, 15000));
 
             player.switchToIndex(targetIndex);
+            
+            const targetVolume = player.state.volume;
+            
+            player._replaceAudioEngine(new AudioEngine());
+            const transitionEngine = player.audioEngine;
+            
+            transitionEngine.volume = 0;
             player.loadCurrentTrack().then(() => {
-                const newEngine = player.audioEngine;
-                if (!newEngine) {
-                    this._instantSwitch(player, targetIndex);
-                    resolve();
-                    return;
-                }
-
-                const targetVolume = player.state.volume;
-
-                newEngine.volume = targetVolume * 0.5;
                 player.play();
 
                 const cancelNewFade = VolumeFader.fade(
-                    newEngine,
-                    targetVolume * 0.5,
+                    transitionEngine,
+                    0,
                     targetVolume,
                     leastTime,
                     null,
@@ -105,6 +103,7 @@ class TransitionNextMusic extends TransitionStrategy {
                 player._activeTransitions = player._activeTransitions || [];
                 player._activeTransitions.push(cancelNewFade, cancelOldFade);
             }).catch(() => {
+                try { oldEngine.destroy(); } catch {}
                 this._instantSwitch(player, targetIndex);
                 resolve();
             });

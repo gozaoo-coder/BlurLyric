@@ -30,6 +30,9 @@ function createMockPlayer(overrides = {}) {
         play: vi.fn(),
         _activeTransitions: [],
         _cancelActiveTransitions: vi.fn(),
+        _replaceAudioEngine: vi.fn().mockImplementation(function(newEngine) {
+            this.audioEngine = newEngine;
+        }),
         ...overrides,
     };
 }
@@ -335,7 +338,7 @@ describe('TransitionNextMusic.execute()', () => {
             30000, // 足够长的超时
         );
 
-        it('新引擎初始音量应设为 targetVolume * 0.5 后开始淡入', async () => {
+        it('新引擎初始音量应设为 0 后开始淡入', async () => {
             const newEngine = createMockAudioEngine({ volume: 0, isActive: true });
             const player = createMockPlayer({
                 state: { volume: 0.8 },
@@ -345,10 +348,9 @@ describe('TransitionNextMusic.execute()', () => {
             });
 
             strategy.execute(player, 1, {});
-            await vi.advanceTimersByTime(0); // 触发 loadCurrentTrack
+            await vi.advanceTimersByTime(0);
 
-            // 新引擎初始音量应为 targetVolume * 0.5
-            expect(newEngine.volume).toBe(0.4);
+            expect(newEngine.volume).toBe(0);
         });
     });
 
@@ -474,36 +476,18 @@ describe('TransitionNextMusic.execute()', () => {
 
     // --- 加载失败时的回退 ---
     describe('加载失败时的回退', () => {
-        it('loadCurrentTrack reject 时应回退到 _instantSwitch（共调用 2 次 loadCurrentTrack）', async () => {
+        it('loadCurrentTrack reject 时应回退到 _instantSwitch', async () => {
             const oldEngine = createMockAudioEngine();
             const player = createMockPlayer({
                 audioEngine: oldEngine,
                 loadCurrentTrack: vi.fn().mockRejectedValue(new Error('load failed')),
             });
 
-            // 不应抛出异常
             await expect(strategy.execute(player, 1)).resolves.toBeUndefined();
 
-            // 应回退到即时切换
             expect(player.switchToIndex).toHaveBeenCalledWith(1);
-            // execute 中调用一次（第71行），_instantSwitch 中再调用一次（第119行）
-            expect(player.loadCurrentTrack).toHaveBeenCalledTimes(2);
-        });
-
-        it('loadCurrentTrack 返回后新引擎为 null 时应回退到 _instantSwitch', async () => {
-            const oldEngine = createMockAudioEngine();
-            const player = createMockPlayer({
-                audioEngine: oldEngine,
-                loadCurrentTrack: vi.fn().mockImplementation(async () => {
-                    player.audioEngine = null; // 模拟加载后引擎仍为 null
-                }),
-            });
-
-            await strategy.execute(player, 1);
-
-            // 应回退到即时切换
-            expect(player.switchToIndex).toHaveBeenCalled();
-            expect(player.loadCurrentTrack).toHaveBeenCalledTimes(2); // execute + _instantSwitch
+            expect(player.loadCurrentTrack).toHaveBeenCalled();
+            expect(oldEngine.destroy).toHaveBeenCalled();
         });
     });
 

@@ -202,7 +202,7 @@ fn parse_mp3_properties(path: &Path) -> (Option<f64>, Option<u32>, Option<u32>, 
         } else {
             br_table_mpeg2[br_index]
         };
-        let br = br_kbps * 1000;
+        let br = (br_kbps as u64) * 1000;
 
         if first_frame_header.is_none() {
             first_frame_header = Some(header);
@@ -211,12 +211,12 @@ fn parse_mp3_properties(path: &Path) -> (Option<f64>, Option<u32>, Option<u32>, 
         let samples_per_frame = if version == 3 { 1152 } else { 576 };
         let frame_length = if version == 3 {
             if layer == 1 {
-                (48_000 * br / sample_rate + padding) as usize
+                (48_000 * br / sample_rate as u64 + padding as u64) as usize
             } else {
-                (144_000 * br / sample_rate + padding) as usize
+                (144_000 * br / sample_rate as u64 + padding as u64) as usize
             }
         } else {
-            (72_000 * br / sample_rate + padding) as usize
+            (72_000 * br / sample_rate as u64 + padding as u64) as usize
         };
 
         if frame_length < 4 {
