@@ -38,7 +38,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
 /// 文件指纹信息（用于增量扫描）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -277,9 +277,7 @@ pub struct MusicLibraryCache {
     memory_cache: Mutex<Option<MusicLibraryCacheData>>,
 }
 
-lazy_static! {
-    static ref MUSIC_LIBRARY_CACHE: Mutex<Option<MusicLibraryCache>> = Mutex::new(None);
-}
+static MUSIC_LIBRARY_CACHE: Lazy<Mutex<Option<MusicLibraryCache>>> = Lazy::new(|| Mutex::new(None));
 
 impl MusicLibraryCache {
     /// 初始化缓存管理器

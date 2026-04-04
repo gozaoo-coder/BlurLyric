@@ -22,7 +22,9 @@ pub struct ImageProcessorConfig {
 impl Default for ImageProcessorConfig {
     fn default() -> Self {
         Self {
-            max_concurrent_tasks: num_cpus::get(),
+            max_concurrent_tasks: std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4),
             use_gpu: true, // 默认启用GPU加速
             default_filter: FilterType::Lanczos3,
         }
@@ -145,12 +147,11 @@ impl ImageProcessor {
         &self,
         images: Vec<(DynamicImage, u32)>,
     ) -> Vec<Result<DynamicImage, String>> {
-        let futures: Vec<_> = images
-            .into_iter()
-            .map(|(img, res)| self.resize_async(img, res))
-            .collect();
-
-        futures::future::join_all(futures).await
+        let mut results = Vec::with_capacity(images.len());
+        for (img, res) in images {
+            results.push(self.resize_async(img, res).await);
+        }
+        results
     }
 
     /// 将图片编码为WebP格式

@@ -39,7 +39,7 @@ export default {
             immediate: true, // 组件初始化时立即执行一次handler
         },
     },
-    inject: ["coverMusicTrack"],
+    inject: ['player'],
     methods: {
         handleParamChange(id, type) {
             // 在这里处理id和type的变化

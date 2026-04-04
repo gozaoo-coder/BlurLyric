@@ -1,5 +1,5 @@
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as serde_json_value};
 use std::collections::HashMap;
@@ -53,22 +53,18 @@ pub use http_proxy::{HttpRequest, HttpResponse, http_request, http_get, http_pos
 // 引入统一数据模型模块（内部使用，不在此导出以避免与现有结构体冲突）
 mod models;
 
-lazy_static! {
-    // ID 计数器
-    static ref SONG_ID_COUNTER: Mutex<u32> = Mutex::new(0);
-    static ref ARTIST_ID_COUNTER: Mutex<u32> = Mutex::new(0);
-    static ref ALBUM_ID_COUNTER: Mutex<u32> = Mutex::new(0);
+static SONG_ID_COUNTER: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
+static ARTIST_ID_COUNTER: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
+static ALBUM_ID_COUNTER: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
 
-    // 音乐、艺人、专辑的缓存
-    static ref MUSIC_CACHE: Mutex<HashMap<PathBuf, Vec<Song>>> = Mutex::new(HashMap::new());
-    static ref ARTIST_CACHE: Mutex<HashMap<String, Artist>> = Mutex::new(HashMap::new());
-    static ref ALBUM_CACHE: Mutex<HashMap<String, Album>> = Mutex::new(HashMap::new());
+static MUSIC_CACHE: Lazy<Mutex<HashMap<PathBuf, Vec<Song>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static ARTIST_CACHE: Lazy<Mutex<HashMap<String, Artist>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static ALBUM_CACHE: Lazy<Mutex<HashMap<String, Album>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
-    // 艺人相关缓存
-    static ref ARTIST_SONGS_MAP: Mutex<HashMap<u32, Vec<Song>>> = Mutex::new(HashMap::new());
-    static ref ALBUM_SONGS_MAP: Mutex<HashMap<u32, Vec<Song>>> = Mutex::new(HashMap::new());
-    static ref MUSIC_DIRS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
-}
+static ARTIST_SONGS_MAP: Lazy<Mutex<HashMap<u32, Vec<Song>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static ALBUM_SONGS_MAP: Lazy<Mutex<HashMap<u32, Vec<Song>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static MUSIC_DIRS: Lazy<Mutex<Vec<PathBuf>>> = Lazy::new(|| Mutex::new(Vec::new()));
+static ALWAYS_ON_TOP_STATE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 // 导出音乐目录列表供其他模块使用
 pub fn get_music_dirs() -> Vec<PathBuf> {
@@ -1679,8 +1675,34 @@ fn reset_all_data() -> Result<(), String> {
 // 新增的关闭应用的方法
 #[tauri::command]
 fn close_app(window: tauri::Window) {
-    // 关闭当前窗口
     window.close().unwrap();
+}
+
+#[tauri::command]
+async fn minimize_window(window: tauri::Window) {
+    let _ = window.minimize();
+}
+
+#[tauri::command]
+async fn toggle_maximize(window: tauri::Window) {
+    if window.is_maximized().unwrap_or(false) {
+        let _ = window.unmaximize();
+    } else {
+        let _ = window.maximize();
+    }
+}
+
+#[tauri::command]
+async fn toggle_always_on_top(window: tauri::Window) -> Result<bool, String> {
+    let new_state = {
+        let mut state = ALWAYS_ON_TOP_STATE.lock().map_err(|e| e.to_string())?;
+        *state = !*state;
+        *state
+    };
+    window
+        .set_always_on_top(new_state)
+        .map_err(|e| e.to_string())?;
+    Ok(new_state)
 }
 
 // Tauri应用入口点
@@ -1707,6 +1729,9 @@ pub fn run() {
             get_albums_songs_by_id,
             get_artists_songs_by_id,
             close_app,
+            minimize_window,
+            toggle_maximize,
+            toggle_always_on_top,
             get_low_quality_album_cover,
             init_application,
             add_users_music_dir,

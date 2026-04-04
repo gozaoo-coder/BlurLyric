@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
 /// 性能指标类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -108,9 +108,7 @@ pub struct PerformanceMonitor {
     timers: Mutex<HashMap<String, Instant>>,
 }
 
-lazy_static! {
-    static ref MONITOR: PerformanceMonitor = PerformanceMonitor::new();
-}
+static MONITOR: Lazy<PerformanceMonitor> = Lazy::new(|| PerformanceMonitor::new());
 
 impl PerformanceMonitor {
     pub fn new() -> Self {

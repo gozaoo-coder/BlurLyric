@@ -53,7 +53,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
 /// 缓存池类型
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -160,9 +160,7 @@ pub struct ResourceCacheManager {
     index_file: PathBuf,
 }
 
-lazy_static! {
-    static ref RESOURCE_CACHE: Mutex<Option<ResourceCacheManager>> = Mutex::new(None);
-}
+static RESOURCE_CACHE: Lazy<Mutex<Option<ResourceCacheManager>>> = Lazy::new(|| Mutex::new(None));
 
 impl ResourceCacheManager {
     /// 初始化资源缓存管理器

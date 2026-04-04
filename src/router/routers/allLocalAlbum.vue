@@ -55,7 +55,7 @@ export default {
         }
 
     },
-    inject: ['appState', 'coverMusicTrack']
+    inject: ['appState', 'player']
 }
 </script>
 

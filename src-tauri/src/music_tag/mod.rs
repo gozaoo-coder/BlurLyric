@@ -7,6 +7,7 @@
 pub mod types;
 pub mod parser;
 pub mod error;
+pub mod audio_properties;
 
 pub use types::*;
 pub use parser::*;

@@ -12,7 +12,7 @@ export default {
             ar_songs: []
         };
     },
-    inject: ['coverMusicTrack'],
+    inject: ['player'],
     components: {powerTable_Music},
     watch: {
         // 监听$route对象中的params属性 

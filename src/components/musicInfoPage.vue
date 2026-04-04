@@ -13,6 +13,29 @@ import {
     computed,
 } from 'vue'
 import baseMethods from '../js/baseMethods';
+
+const EMPTY_TRACK = {
+    id: -2,
+    name: '',
+    ar: [],
+    al: { id: -2, name: '', picUrl: '' }
+};
+
+function safePlayer(player) {
+    return player || {
+        state: { currentTrack: EMPTY_TRACK, playing: false, currentTime: 0, duration: 1, currentTimeRound: 0, durationRound: 0 },
+        playMode: 'loopPlaylist',
+        playlist: { getAll: () => [], getNextIndex: () => 0 },
+        audioEngine: { play() {}, pause() {} },
+        next() {},
+        prev() {},
+        play() {},
+        pause() {},
+        cyclePlayMode() {},
+        seekByProgress() {}
+    };
+}
+
 export default {
     data() {
         return {
@@ -23,40 +46,39 @@ export default {
                 }
             },
 
-            // UI大小调节
             UIScale_userSet: 1,
-            /**
-             * 
-             */
             UIScale_autoSet: 1,
             UIMode: 'desktop',
             UIMode_enum: ['mobile', 'tablet', 'desktop'],
             maxColumnWidth: "min(50vh, 40vw)",
 
-            // 提供下方缓存保存
             dragInfo: null,
 
-            // 组件位置状态
-            /**
-             * bottom: 在底部
-             * top: 在顶部
-             * toBottom: 从顶部动画至底部中
-             * toTop：从底部动画至顶部中
-             */
             musicInfoPagePosition: 'bottom',
 
-            // 缓存监听器注销器
             eventListenerRemovers: [],
             cancelCoverBindReg: () => { },
 
-            // 用于标识当前处于哪个时刻激活的动画
-            // 理论值：Number: Date.now()
             changePositionTimeStamps: 0
         }
     },
     computed: {
+        p() {
+            return safePlayer(this.player);
+        },
         progress: function () {
-            return Number((this.audioState.currentTime / this.audioState.duration).toFixed(3))
+            const s = this.p.state;
+            if (!s.duration || s.duration <= 0) return 0;
+            return Number((s.currentTime / s.duration).toFixed(3));
+        },
+        nextTrackName: function () {
+            const p = this.p;
+            const playlist = p.playlist.getAll();
+            const nextIndex = p.playlist.getNextIndex ? p.playlist.getNextIndex() : 0;
+            if (p.playMode === 'randomPlay') {
+                return '随机播放';
+            }
+            return playlist[nextIndex]?.name || '';
         },
 
     },
@@ -76,29 +98,23 @@ export default {
             musicInfoPagePositionState: computed(() => this.musicInfoPagePosition)
         }
     },
-    inject: ['currentMusicInfo', 'audioState', 'audioManager', 'changePlayMode', 'trackState', 'musicTrack',
-        'nextMusic', 'prevMusic', 'getNextMusicIndex', 'getPrevMusicIndex', 'regResizeHandle', 'config', 'scrollState'
-    ],
+    inject: ['player', 'regResizeHandle', 'config', 'scrollState'],
     mounted() {
 
-        // 注册底部栏拖动
         this.onBottomListener();
 
-        // 注册进度条拖动
         ([
             this.$refs.progressBoxContainer,
             this.$refs.bar_ProgressBoxContainer
         ]).map((elm) => {
-            // console.log(elm);
 
             baseMethods.progressBarReg(elm, () => {
-                return this.audioState.currentTime / this.audioState.duration
+                const s = this.p.state;
+                if (!s.duration || s.duration <= 0) return 0;
+                return s.currentTime / s.duration
             }, (info) => {
                 if (info.draging == true) {
-                    // console.log(info);
-                    // Number((this.audioState.currentTime / this.audioState.duration).toFixed(3))
-                    this.audioManager.audioDom.currentTime = Math.min(info.currentProgress * this.audioState.duration, this.audioState.duration - this.config.audio.audioStreamDuration - 1)
-                    // this.progress = info.currentProgress
+                    this.p.seekByProgress(info.currentProgress)
                 }
             })
         })
@@ -113,31 +129,26 @@ export default {
     },
     methods: {
         toTop(info) {
-            // 清理现有的监听器
+
             this.eventListenerRemovers.forEach((value) => value());
 
-            // 新增顶部的监听器
             this.onTopListener();
             this.musicInfoPagePosition = "toTop";
 
-            // 记录当前时间戳，用于判断动画是否完成
             let timeStamps = Date.now();
             this.changePositionTimeStamps = timeStamps;
 
-            // 判断是否仍为当前动画的函数
             const stillIsThisAnimation = () => this.changePositionTimeStamps == timeStamps;
 
-            // 移动页面到顶部
             anime({
                 targets: this.$refs.musicInfoPageRow,
                 easing: 'spring(1, 80, 16,' + Math.abs(info.speedY).toFixed(2) + ')',
                 translateY: -document.body.offsetHeight + 'px',
                 complete: () => {
-                    this.musicInfoPagePosition = "top"; // 动画结束时更新状态
+                    this.musicInfoPagePosition = "top";
                 }
             });
 
-            // 隐藏控制栏
             anime({
                 targets: this.$refs.musicControlBar,
                 opacity: 0,
@@ -145,7 +156,6 @@ export default {
                 duration: 100
             });
 
-            // 移动音乐详情
             anime({
                 targets: this.style.musicDetailRender,
                 transformX: 1,
@@ -153,7 +163,6 @@ export default {
                 duration: 100
             });
 
-            // 取消模糊效果
             setTimeout(() => {
                 if (stillIsThisAnimation()== true) {
                     anime.set(this.$refs.musicInfoPageRow, {
@@ -163,7 +172,6 @@ export default {
                 }
             }, 300);
 
-            // 显示主容器
             setTimeout(() => {
                 if (stillIsThisAnimation() == true) {
                     anime({
@@ -176,7 +184,6 @@ export default {
             }, 100);
 
 
-            // 重新绑定封面图片、主界面位置
             let position_bind = (speed) => {
 
                 anime.set(this.$refs.musicInfoPageRow, {
@@ -201,29 +208,22 @@ export default {
 
         },
 
-        // 将音乐信息页面移动到底部
         toBottom(info) {
             this.musicInfoPagePosition = "toBottom";
 
-            // 取消封面图片位置绑定
             this.cancelCoverBindReg();
 
-            // 清理现有的监听器
             this.eventListenerRemovers.forEach((value) => value());
-            // 记录当前时间戳，用于判断动画是否完成
             const timeStamps = Date.now();
             this.changePositionTimeStamps = timeStamps;
 
-            // 判断是否仍为当前动画的函数
             const stillIsThisAnimation = () => this.changePositionTimeStamps === timeStamps;
 
-            // 添加模糊效果
             anime.set(this.$refs.musicInfoPageRow, {
                 background: 'rgba(0, 0, 0, 0.0625)',
                 backdropFilter: 'blur(30px)'
             });
 
-            // 移动页面到底部
             anime({
                 targets: this.$refs.musicInfoPageRow,
                 easing: 'spring(1, 80, 16,' + Math.abs(info.speedY).toFixed(2) + ')',
@@ -233,16 +233,14 @@ export default {
                 }
             });
 
-            // 显示控制栏
             anime({
                 targets: this.$refs.musicControlBar,
                 opacity: 1,
                 easing: 'linear',
-                duration: 100,
+                duration: 300,
                 delay: 300,
             });
 
-            // 隐藏主容器
             anime({
                 targets: this.$refs.mainContainer,
                 opacity: 0,
@@ -250,7 +248,6 @@ export default {
                 duration: 100,
             });
 
-            // 缩小封面图片
             anime({
                 targets: this.$refs.cover,
                 width: 54,
@@ -260,13 +257,13 @@ export default {
                 translateX: 17
             });
 
-            // 添加底部监听器
             this.onBottomListener();
         },
 
         onBottomListener() {
             let musicControlBar_animeJsCallBack = null
             let lastTransformX, lastTransformY
+            const p = this.p;
             let callBack_drag = drag.create(this.$refs.musicControlBar,
                 (info) => {
                     lastTransformX = this.style.musicDetailRender.transformX
@@ -298,11 +295,11 @@ export default {
 
                     if (info.offsetX < -100 || info.speedX < -1) {
                         if (navigator.vibrate) navigator.vibrate(50);
-                        this.nextMusic()
+                        p.next()
                     }
                     if (info.offsetX > 100 || info.speedX > 1) {
                         if (navigator.vibrate) navigator.vibrate(50);
-                        this.prevMusic()
+                        p.prev()
                     }
                     musicControlBar_animeJsCallBack = anime({
                         targets: this.style.musicDetailRender,
@@ -325,7 +322,7 @@ export default {
 
                 },
                 (info) => {
-                    // if (info.offsetY > 100) {
+
                     if (info.offsetY < -100 || info.speedY > 1.5) {
 
                         if (navigator.vibrate) navigator.vibrate(50);
@@ -337,7 +334,6 @@ export default {
                 (info) => {
 
                 })
-            // controlTapBar
             this.eventListenerRemovers.push(callBack_drag.destroy)
         },
         adjustedMaxColumnWidth() {
@@ -346,15 +342,15 @@ export default {
             let isDesktop = window.innerWidth > 768;
             if (isMobilePortrait) {
                 this.UIMode = 'mobile';
-                return '76vw'; // 手机竖屏适配值
+                return '76vw';
             } else if (isTabletPortrait) {
                 this.UIMode = 'tablet';
-                return 'min(76vw,48vh)'; // 手机竖屏适配值
+                return 'min(76vw,48vh)';
 
             } else if (isDesktop) {
                 this.UIMode = 'desktop';
 
-                return this.maxColumnWidth; // 横屏适配最佳值
+                return this.maxColumnWidth;
             }
         },
         UIScale() {
@@ -365,10 +361,8 @@ export default {
             if (isMobile) {
                 return (this.UIScale_userSet != 1 ? this.UIScale_userSet : this.UIScale_autoSet) + 'rem';
             } else if (isTablet) {
-                // Adjust the scale for tablets
                 return (this.UIScale_userSet != 1 ? this.UIScale_userSet : this.UIScale_autoSet) + 'rem';
             } else if (isDesktop) {
-                // Adjust the scale for desktops
                 return (this.UIScale_userSet != 1 ? this.UIScale_userSet : this.UIScale_autoSet) + 'rem';
             }
         }
@@ -383,8 +377,8 @@ export default {
         <div :class="['relativeBox',`mode-${UIMode}`]">
 
             <div ref="cover" style="transform: translateX(17px) translateY(17px); " class="cover">
-                <lazyLoadCoverImage class="blur" :id="currentMusicInfo.al.id"></lazyLoadCoverImage>
-                <lazyLoadCoverImage :maxResolution="0" :id="currentMusicInfo.al.id"></lazyLoadCoverImage>
+                <lazyLoadCoverImage class="blur" :id="p.state.currentTrack.al.id"></lazyLoadCoverImage>
+                <lazyLoadCoverImage :maxResolution="0" :id="p.state.currentTrack.al.id"></lazyLoadCoverImage>
             </div>
 
 
@@ -402,52 +396,52 @@ export default {
                     }" class="dragRender">
                         <div class="prev">
                             <div class="event">上一首</div>
-                            <div class="name">{{ musicTrack[getNextMusicIndex()].name }}</div>
+                            <div class="name">{{ nextTrackName }}</div>
                         </div>
                         <div class="currentMusic">
                             <div class="name">
-                                <textSpawn :text="currentMusicInfo.name" />
+                                <textSpawn :text="p.state.currentTrack.name" />
 
                             </div>
                             <div class="artists">
-                                <span v-for="(value, index) in currentMusicInfo.ar">
+                                <span v-for="(value, index) in p.state.currentTrack.ar">
                                     <textSpawn
-                                        :text="value.name + ((index != currentMusicInfo.ar.length - 1) ? '/' : '')" />
+                                        :text="value.name + ((index != p.state.currentTrack.ar.length - 1) ? '/' : '')" />
                                 </span>
-                                <span v-if="currentMusicInfo.al.id != -2"> - </span>{{ currentMusicInfo.al.name }}
+                                <span v-if="p.state.currentTrack.al.id != -2"> - </span>{{ p.state.currentTrack.al.name }}
 
                             </div>
                         </div>
                         <div class="next">
                             <div class="event">下一首</div>
-                            <div v-if="trackState.playMode != 'randomPlay'" class="name">
-                                {{ musicTrack[getNextMusicIndex()].name }}</div>
-                            <div v-if="trackState.playMode == 'randomPlay'" class="name">随机播放</div>
+                            <div v-if="p.playMode != 'randomPlay'" class="name">
+                                {{ nextTrackName }}</div>
+                            <div v-if="p.playMode == 'randomPlay'" class="name">随机播放</div>
                         </div>
                     </div>
                 </div>
-                <div v-show="currentMusicInfo.id != -2" class="control">
-                    <buttom_icon_circleBackground @click="prevMusic()">
+                <div v-show="p.state.currentTrack.id != -2" class="control">
+                    <buttom_icon_circleBackground @click="p.prev()">
                         <template #icon>
                             <i class="bi bi-skip-start-fill"></i>
                         </template>
                     </buttom_icon_circleBackground>
                     <buttom_icon_circleBackground
-                        @click="(audioState.playing == true) ? audioManager.pause() : audioManager.play()"
+                        @click="(p.state.playing == true) ? p.pause() : p.play()"
                         class="playButtom">
                         <template #icon>
                             <div style="transform: scale(1.5);transform-origin: 50% 50%;">
-                                <i v-if="audioState.playing == true" class="bi bi-pause-fill"></i>
-                                <i v-if="audioState.playing == false" class="bi bi-play-fill"></i>
+                                <i v-if="p.state.playing == true" class="bi bi-pause-fill"></i>
+                                <i v-if="p.state.playing == false" class="bi bi-play-fill"></i>
                             </div>
                         </template>
                     </buttom_icon_circleBackground>
-                    <buttom_icon_circleBackground @click="nextMusic()">
+                    <buttom_icon_circleBackground @click="p.next()">
                         <template #icon>
                             <i class="bi bi-skip-end-fill"></i>
                         </template>
                     </buttom_icon_circleBackground>
-                    <buttom_icon_circleBackground @click="changePlayMode">
+                    <buttom_icon_circleBackground @click="p.cyclePlayMode()">
                         <template #icon>
                             <playModeSvg style="transform: scale(.7) translateY(1%);transform-origin: 50% 50%;">
                             </playModeSvg>
@@ -457,7 +451,6 @@ export default {
                         <template #icon>
                             <i style="transform: scale(.7) translateY(1%);transform-origin: 50% 50%;"
                                 class="bi-volume-up bi"></i>
-                            <!-- <playModeSvg  style="transform: scale(.7) translateY(1%);transform-origin: 50% 50%;"></playModeSvg> -->
                         </template>
                     </buttom_icon_circleBackground>
                     <buttom_icon_circleBackground>
@@ -472,13 +465,12 @@ export default {
                 'fontSize': UIScale,
                 'pointer-events': (musicInfoPagePosition == 'top') ? 'auto' : 'none',
             }" ref="mainContainer" class="mainContainer">
-                <background class="player-background" :coverId="currentMusicInfo.al.id"
+                <background class="player-background" :coverId="p.state.currentTrack.al.id"
                     :musicInfoPagePosition="musicInfoPagePosition" />
 
                 <div class="controlBar">
                     <div ref="controlTapBar" class="tapBar"></div>
                 </div>
-                <!--绑定最大栏宽度-->
                 <div :style="{
                     '--maxColumnWidth': adjustedMaxColumnWidth()
                 }" class="musicDetail">
@@ -487,14 +479,14 @@ export default {
                     </div>
                     <div class="musicInfo">
                         <div class="name">
-                            <textSpawn :text="currentMusicInfo.name" />
+                            <textSpawn :text="p.state.currentTrack.name" />
                         </div>
                         <div class="artists">
-                            <span v-for="(value, index) in currentMusicInfo.ar">
+                            <span v-for="(value, index) in p.state.currentTrack.ar">
                                 <textSpawn
-                                    :text="value.name + ((index != currentMusicInfo.ar.length - 1) ? '/' : '')" />
+                                    :text="value.name + ((index != p.state.currentTrack.ar.length - 1) ? '/' : '')" />
                             </span>
-                            <span v-if="currentMusicInfo.al.id != -2"> - </span>{{ currentMusicInfo.al.name }}
+                            <span v-if="p.state.currentTrack.al.id != -2"> - </span>{{ p.state.currentTrack.al.name }}
                         </div>
 
                     </div>
@@ -508,37 +500,37 @@ export default {
                         </div>
                         <div class="progressInfo">
                             <div class="current">
-                                {{ baseMethods.formatTime_MMSS(audioState.currentTime_round) }}
+                                {{ baseMethods.formatTime_MMSS(p.state.currentTimeRound) }}
                             </div>
                             <div class="duration">
-                                {{ baseMethods.formatTime_MMSS(audioState.duration_round) }}
+                                {{ baseMethods.formatTime_MMSS(p.state.durationRound) }}
                             </div>
                         </div>
                     </div>
                     <div class="musicDetailButton">
-                        <button_circle @click="changePlayMode">
+                        <button_circle @click="p.cyclePlayMode()">
                             <playModeSvg style="transform: scale(.75) translateY(1%);transform-origin: 50% 50%;">
                             </playModeSvg>
                         </button_circle>
 
 
-                        <button_circle @click="prevMusic()">
+                        <button_circle @click="p.prev()">
                             <i class="bi bi-skip-start-fill"></i>
                         </button_circle>
                         <button_circle
-                            @click="(audioState.playing == true) ? audioManager.pause() : audioManager.play()"
+                            @click="(p.state.playing == true) ? p.pause() : p.play()"
                             class="playButtom">
                             <div style="transform: scale(1.5);transform-origin: 50% 50%;">
-                                <i v-if="audioState.playing == true" class="bi bi-pause-fill"></i>
-                                <i v-if="audioState.playing == false" class="bi bi-play-fill"></i>
+                                <i v-if="p.state.playing == true" class="bi bi-pause-fill"></i>
+                                <i v-if="p.state.playing == false" class="bi bi-play-fill"></i>
                             </div>
                         </button_circle>
-                        <button_circle @click="nextMusic()">
+                        <button_circle @click="p.next()">
                             <i class="bi bi-skip-end-fill"></i>
                         </button_circle>
                         <button_circle>
                             <i style="transform: scale(.75) translateY(1%);transform-origin: 50% 50%;"
-                                class="bi bi-volume-up bi"></i>
+                                class="bi-volume-up bi"></i>
                         </button_circle>
                     </div>
                     <div class="musicDetailButton">
@@ -625,7 +617,6 @@ export default {
 .prev>.name,
 .next>.name {
     font-size: 14px;
-    /* font-weight: 900; */
     color: #000000AD;
     width: 100%;
     word-break: break-all;
@@ -679,11 +670,10 @@ export default {
     font-size: 1em;
 
 }
-
 .coverImagePlaceHolder {
     grid-column: info-side;
     grid-row: cover;
-    /* background-color: #000; */
+
     align-self: center;
     justify-self: center;
     background-position: center;
@@ -691,8 +681,8 @@ export default {
     border-radius: 1%;
     overflow: hidden;
     image-rendering: auto;
-    /* 绑定maxColumnWidth值 */
-    /* width: var(--maxColumnWidth); */
+
+
     height: var(--maxColumnWidth);
 
     aspect-ratio: 1/1;
@@ -727,8 +717,7 @@ export default {
     height: .8em;
     cursor: n-resize;
     z-index: 1;
-    /* display: a; */
-    /* position: absolute; */
+
     width: 5em;
     border-radius: 1em;
     background-color: #fff2;
@@ -754,10 +743,11 @@ export default {
     user-select: none;
     z-index: 100;
     box-sizing: border-box;
-    /* outline: 1px solid #d6d6d6; */
+
     box-shadow: 0 0px 15px rgba(0, 0, 0, 0.14);
-    /* transform: translateY() */
-    overflow: hidden
+
+    transform: translateY(0);
+    overflow: hidden;
 }
 
 .relativeBox {
@@ -784,7 +774,7 @@ export default {
     position: absolute;
     height: 54px;
     width: 54px;
-    /* transform: translateX(17px) translateY(17px);  */
+
     z-index: 1;
     top: 0;
     left: 0;
@@ -804,7 +794,6 @@ export default {
     overflow: hidden;
     height: inherit;
     width: inherit;
-
 }
 
 .cover * {
@@ -875,7 +864,7 @@ export default {
 .prev>.name,
 .next>.name {
     font-size: 14px;
-    /* font-weight: 900; */
+
     color: #000000AD;
 
 }
@@ -897,13 +886,13 @@ export default {
 
 .playButtom {
     font-size: 28px;
-    /* height: 30px; */
+
     padding: 0.4em;
 }
 
 .musicDetailButton .playButtom {
     font-size: 1.75em;
-    /* padding: 0.5em; */
+
 }
 
 @media screen and (max-width: 560px) {
@@ -941,7 +930,7 @@ export default {
     position: relative;
     margin: 0 0%;
     width: 100%;
-    /* width: 98%; */
+
     height: 0.875em;
     border-radius: 0.4375em;
     box-shadow: var(--Shadow-value-offsetY-low);

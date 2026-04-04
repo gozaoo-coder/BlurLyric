@@ -14,6 +14,14 @@ export default {
       useDialog: false
     };
   },
+  computed: {
+    p() {
+      return this.player || {
+        state: { currentTrack: { name: '' }, playing: false, currentTime: 0, duration: 1 },
+        audioEngine: { play() {}, pause() {} }
+      };
+    }
+  },
   components: {
     toggle,
     tracksRow,
@@ -22,7 +30,7 @@ export default {
     text_contextMenu,
     dialogVue
   },
-  inject: ['audioManager', 'audioState', 'currentMusicInfo'],
+  inject: ['player'],
   props: {},
   methods: {}
 };
@@ -35,12 +43,12 @@ export default {
 
     <h2>
         <span style="font-size: 0.8em;">曲名:</span><br>
-        <textspawn :text="currentMusicInfo.name" />
+        <textspawn :text="p.state.currentTrack.name" />
     </h2>
-    {{ audioState.currentTime }}，{{ audioState.duration }}<br>
-    进度：{{ ((audioState.currentTime / audioState.duration) * 100).toFixed(2) + '%' }}
+    {{ p.state.currentTime }}，{{ p.state.duration }}<br>
+    进度：{{ ((p.state.currentTime / (p.state.duration || 1)) * 100).toFixed(2) + '%' }}
 
-    <iconWithText v-if="audioState.playing == false" @click="audioManager.play()" type="background">
+    <iconWithText v-if="p.state.playing == false" @click="p.audioEngine.play()" type="background">
         <template #text>
             播放
         </template>
@@ -48,7 +56,7 @@ export default {
             <i class="bi bi-play-circle-fill"></i>
         </template>
     </iconWithText>
-    <iconWithText v-if="audioState.playing == true" @click="audioManager.pause()" type="background">
+    <iconWithText v-if="p.state.playing == true" @click="p.audioEngine.pause()" type="background">
         <template #text>
             暂停
         </template>
@@ -166,6 +174,7 @@ export default {
     <div>
 
 
+
     </div>
 </template>
 
@@ -174,7 +183,6 @@ export default {
     display: flex;
 
 }
-
 .buttomTrack>* {
     width: fit-content;
 }

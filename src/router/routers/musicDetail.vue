@@ -14,7 +14,7 @@ export default {
         };
     },
     components: { powerTable_Music },
-    inject: ['coverMusicTrack', 'pushMusic', 'regMessage'],
+    inject: ['player', 'regMessage'],
     watch: {
         $route: {
             handler(_result, __) {
@@ -67,14 +67,14 @@ export default {
         },
         playTrack() {
             if (this.track) {
-                this.pushMusic(this.track);
+                this.player.push(this.track);
             }
         },
         playAll() {
             if (this.relatedTracks.length > 0) {
-                this.coverMusicTrack([this.track, ...this.relatedTracks], 0);
+                this.player.replace([this.track, ...this.relatedTracks], 0);
             } else if (this.track) {
-                this.pushMusic(this.track);
+                this.player.push(this.track);
             }
         },
         goToArtist() {

@@ -6,15 +6,9 @@
 
 use super::types::*;
 use super::error::*;
+use super::audio_properties::parse_audio_properties;
 use std::path::{Path, PathBuf};
 use std::fs;
-
-// Symphonia音频时长解析
-use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 
 /// 元数据解析器
 pub struct MetadataParser {
@@ -843,126 +837,13 @@ impl MetadataParser {
         })
     }
 
-    /// 解析音频时长（使用Symphonia）
     pub fn parse_duration<P: AsRef<Path>>(&self, path: P) -> Option<f64> {
-        let path = path.as_ref();
-        
-        // 打开文件
-        let file = std::fs::File::open(path).ok()?;
-        
-        // 创建媒体源流
-        let mss = MediaSourceStream::new(Box::new(file), Default::default());
-        
-        // 创建提示
-        let mut hint = Hint::new();
-        
-        // 根据扩展名设置提示
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            hint.with_extension(ext);
-        }
-        
-        // 使用默认选项
-        let format_opts: FormatOptions = Default::default();
-        let metadata_opts: MetadataOptions = Default::default();
-        let decoder_opts: DecoderOptions = Default::default();
-        
-        // 探测格式
-        let probed = symphonia::default::get_probe()
-            .format(&hint, mss, &format_opts, &metadata_opts)
-            .ok()?;
-        
-        let mut format = probed.format;
-        
-        // 获取时长信息
-        let track = format.tracks().first()?;
-        
-        // 尝试从轨道获取时长
-        if let Some(duration) = track.codec_params.time_base {
-            if let Some(n_frames) = track.codec_params.n_frames {
-                let duration_secs = n_frames as f64 * duration.numer as f64 / duration.denom as f64;
-                return Some(duration_secs);
-            }
-        }
-        
-        // 如果无法从轨道获取，尝试解码获取
-        let decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &decoder_opts)
-            .ok()?;
-        
-        // 尝试从容器获取时长
-        if let Some(duration) = format.default_track().and_then(|t| t.codec_params.time_base) {
-            if let Some(n_frames) = format.default_track().and_then(|t| t.codec_params.n_frames) {
-                let duration_secs = n_frames as f64 * duration.numer as f64 / duration.denom as f64;
-                return Some(duration_secs);
-            }
-        }
-        
-        None
+        let (duration, _, _, _) = parse_audio_properties(path.as_ref());
+        duration
     }
 
-    /// 解析音频时长和比特率
     pub fn parse_audio_properties<P: AsRef<Path>>(&self, path: P) -> (Option<f64>, Option<u32>, Option<u32>, Option<u8>) {
-        let path = path.as_ref();
-        
-        // 打开文件
-        let file = match std::fs::File::open(path) {
-            Ok(f) => f,
-            Err(_) => return (None, None, None, None),
-        };
-        
-        // 创建媒体源流
-        let mss = MediaSourceStream::new(Box::new(file), Default::default());
-        
-        // 创建提示
-        let mut hint = Hint::new();
-        
-        // 根据扩展名设置提示
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            hint.with_extension(ext);
-        }
-        
-        // 使用默认选项
-        let format_opts: FormatOptions = Default::default();
-        let metadata_opts: MetadataOptions = Default::default();
-        
-        // 探测格式
-        let probed = match symphonia::default::get_probe()
-            .format(&hint, mss, &format_opts, &metadata_opts) {
-            Ok(p) => p,
-            Err(_) => return (None, None, None, None),
-        };
-        
-        let format = probed.format;
-        
-        // 获取第一个轨道
-        let track = match format.tracks().first() {
-            Some(t) => t,
-            None => return (None, None, None, None),
-        };
-        
-        let params = &track.codec_params;
-        
-        // 解析时长
-        let duration = if let Some(time_base) = params.time_base {
-            params.n_frames.map(|n_frames| {
-                n_frames as f64 * time_base.numer as f64 / time_base.denom as f64
-            })
-        } else {
-            None
-        };
-        
-        // 解析比特率（kbps）
-        // 注意：Symphonia的CodecParameters中没有直接的bits_per_second字段
-        // 需要从其他方式获取，这里暂时返回None
-        let bitrate: Option<u32> = None;
-        
-        // 解析采样率
-        let sample_rate = params.sample_rate;
-        
-        // 解析声道数
-        let channels = params.channels.map(|c| c.count() as u8);
-        
-        (duration, bitrate, sample_rate, channels)
+        parse_audio_properties(path.as_ref())
     }
 }
 
