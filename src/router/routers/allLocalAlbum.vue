@@ -5,9 +5,11 @@ import conditioner from '../../components/tracks/conditioner.vue'
 import virtualGridAlbum from '../../components/virtualGridAlbum.vue'
 import baseMethods from '../../js/baseMethods'
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 export default {
   setup() {
+    const router = useRouter()
     const albumList = ref([])
     const arraySortCondition = ref({
       filterFunction: (item) => {
@@ -32,7 +34,7 @@ export default {
     }
 
     const handleAlbumClick = (item) => {
-      window.$router?.push({
+      router.push({
         path: '/localAlbum/',
         query: {
           id: item.id,
