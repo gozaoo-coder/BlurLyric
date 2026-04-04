@@ -78,18 +78,22 @@ pub struct Track {
     pub sample_rate: Option<u32>,
     pub channels: Option<u8>,
     pub lyrics: Option<String>,
+    /// 其他标签信息（键值对）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub other_tags: Option<std::collections::HashMap<String, String>>,
     
     // ========== 向后兼容字段 ==========
     /// 艺术家列表（旧格式，用于前端兼容）
-    #[serde(default)]
+    #[serde(rename = "ar", default)]
     pub ar: Vec<LegacyArtist>,
     /// 专辑（旧格式）
+    #[serde(rename = "al")]
     pub al: Option<LegacyAlbum>,
     /// 歌词（旧格式）
-    #[serde(default)]
+    #[serde(rename = "lyric", default)]
     pub lyric: String,
     /// 来源路径（旧格式）
-    #[serde(default)]
+    #[serde(rename = "src", default)]
     pub src: String,
     /// 来源信息列表（旧格式，用于去重合并）
     #[serde(default)]
@@ -229,6 +233,7 @@ impl Track {
         bitrate: Option<u32>,
         sample_rate: Option<u32>,
         channels: Option<u8>,
+        other_tags: Option<std::collections::HashMap<String, String>>,
         sources: Vec<TrackSourceInfo>,
         primary_source_index: usize,
     ) -> Self {
@@ -268,6 +273,7 @@ impl Track {
             sample_rate,
             channels,
             lyrics: if lyric.is_empty() { None } else { Some(lyric.clone()) },
+            other_tags,
             // 向后兼容字段
             ar: artists,
             al: album,
