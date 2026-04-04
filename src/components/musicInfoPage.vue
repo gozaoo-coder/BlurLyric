@@ -59,7 +59,10 @@ export default {
             eventListenerRemovers: [],
             cancelCoverBindReg: () => { },
 
-            changePositionTimeStamps: 0
+            changePositionTimeStamps: 0,
+
+            activeAnimations: [],
+            activeTimeouts: []
         }
     },
     computed: {
@@ -120,15 +123,44 @@ export default {
         })
     },
     beforeUnmount() {
-        this.eventListenerRemovers.map((value) => {
-            value()
-        })
-    },
-    beforeUnmount() {
         this.eventListenerRemovers.map((value) => value())
+        this.cancelAllAnimationsAndTimeouts()
     },
     methods: {
+        cancelAllAnimationsAndTimeouts() {
+            this.activeAnimations.forEach(anim => {
+                if (anim && typeof anim.pause === 'function') {
+                    anim.pause()
+                }
+            })
+            this.activeAnimations = []
+
+            this.activeTimeouts.forEach(timeoutId => {
+                clearTimeout(timeoutId)
+            })
+            this.activeTimeouts = []
+        },
+
+        trackAnimation(anim) {
+            if (anim) {
+                this.activeAnimations.push(anim)
+            }
+            return anim
+        },
+
+        trackTimeout(callback, delay) {
+            const timeoutId = setTimeout(() => {
+                const index = this.activeTimeouts.indexOf(timeoutId)
+                if (index > -1) {
+                    this.activeTimeouts.splice(index, 1)
+                }
+                callback()
+            }, delay)
+            this.activeTimeouts.push(timeoutId)
+            return timeoutId
+        },
         toTop(info) {
+            this.cancelAllAnimationsAndTimeouts()
 
             this.eventListenerRemovers.forEach((value) => value());
 
@@ -140,31 +172,33 @@ export default {
 
             const stillIsThisAnimation = () => this.changePositionTimeStamps == timeStamps;
 
-            anime({
+            this.trackAnimation(anime({
                 targets: this.$refs.musicInfoPageRow,
                 easing: 'spring(1, 80, 16,' + Math.abs(info.speedY).toFixed(2) + ')',
                 translateY: -document.body.offsetHeight + 'px',
                 complete: () => {
-                    this.musicInfoPagePosition = "top";
+                    if (stillIsThisAnimation()) {
+                        this.musicInfoPagePosition = "top";
+                    }
                 }
-            });
+            }));
 
-            anime({
+            this.trackAnimation(anime({
                 targets: this.$refs.musicControlBar,
                 opacity: 0,
                 easing: 'linear',
                 duration: 100
-            });
+            }));
 
-            anime({
+            this.trackAnimation(anime({
                 targets: this.style.musicDetailRender,
                 transformX: 1,
                 easing: 'linear',
                 duration: 100
-            });
+            }));
 
-            setTimeout(() => {
-                if (stillIsThisAnimation()== true) {
+            this.trackTimeout(() => {
+                if (stillIsThisAnimation()) {
                     anime.set(this.$refs.musicInfoPageRow, {
                         background: 'rgb(233,233,233)',
                         backdropFilter: 'blur(0px)'
@@ -172,14 +206,14 @@ export default {
                 }
             }, 300);
 
-            setTimeout(() => {
-                if (stillIsThisAnimation() == true) {
-                    anime({
+            this.trackTimeout(() => {
+                if (stillIsThisAnimation()) {
+                    this.trackAnimation(anime({
                         targets: this.$refs.mainContainer,
                         opacity: 1,
                         easing: 'linear',
                         duration: 100,
-                    });
+                    }));
                 }
             }, 100);
 
@@ -194,14 +228,14 @@ export default {
             let cover_position_bind = (speed) => {
                 let positionData = this.$refs.coverImagePlaceHolder.getBoundingClientRect()
 
-                anime({
+                this.trackAnimation(anime({
                     targets: this.$refs.cover,
                     easing: 'spring(1, 80, 15,' + speed + ')',
                     width: positionData.width,
                     height: positionData.height,
                     translateY: (this.$refs.coverImagePlaceHolder.offsetTop + 41) + 'px',
                     translateX: positionData.x + 'px'
-                })
+                }))
             }
             this.$nextTick(() => { cover_position_bind(Math.abs(info.speedY).toFixed(2)) })
             this.cancelCoverBindReg = this.regResizeHandle('coverMove', () => { position_bind(0) }).cancelReg
@@ -209,6 +243,8 @@ export default {
         },
 
         toBottom(info) {
+            this.cancelAllAnimationsAndTimeouts()
+
             this.musicInfoPagePosition = "toBottom";
 
             this.cancelCoverBindReg();
@@ -224,38 +260,40 @@ export default {
                 backdropFilter: 'blur(30px)'
             });
 
-            anime({
+            this.trackAnimation(anime({
                 targets: this.$refs.musicInfoPageRow,
                 easing: 'spring(1, 80, 16,' + Math.abs(info.speedY).toFixed(2) + ')',
                 translateY: -88,
                 complete: () => {
-                    this.musicInfoPagePosition = "bottom";
+                    if (stillIsThisAnimation()) {
+                        this.musicInfoPagePosition = "bottom";
+                    }
                 }
-            });
+            }));
 
-            anime({
+            this.trackAnimation(anime({
                 targets: this.$refs.musicControlBar,
                 opacity: 1,
                 easing: 'linear',
                 duration: 300,
                 delay: 300,
-            });
+            }));
 
-            anime({
+            this.trackAnimation(anime({
                 targets: this.$refs.mainContainer,
                 opacity: 0,
                 easing: 'linear',
                 duration: 100,
-            });
+            }));
 
-            anime({
+            this.trackAnimation(anime({
                 targets: this.$refs.cover,
                 width: 54,
                 height: 54,
                 easing: 'spring(1, 80, 15,' + Math.abs(info.speedY).toFixed(2) + ')',
                 translateY: 17,
                 translateX: 17
-            });
+            }));
 
             this.onBottomListener();
         },

@@ -3,9 +3,9 @@
     <div class="placeholder" v-show="!currentSrc || imageOpacity === 0">
       <i class="bi bi-music-note"></i>
     </div>
-    <div class="loading-skeleton" v-show="isLoading && !currentSrc"></div>
+    <div class="loading-skeleton" v-show="isLoading && imageOpacity === 0"></div>
     <img
-      v-if="currentSrc"
+      v-show="currentSrc"
       :src="currentSrc"
       class="loaded-image"
       :style="{ opacity: imageOpacity }"
@@ -26,10 +26,9 @@ export default {
       currentSrc: '',
       nextTransilateTime: 0,
       timerID: undefined,
-      objectURL: null,
-      destroyObjectURL: () => {},
       isLoading: false,
       cacheKey: null,
+      pendingId: null,
     };
   },
   inject: ['regMessage'],
@@ -61,60 +60,63 @@ export default {
     handleImageError(error) {
       this.$emit("imageError", error);
     },
-    fadeOutImage() {
-      this.imageOpacity = 0;
-      this.nextTransilateTime = Date.now() + 500;
-      this.releaseResource();
-      setTimeout(() => {
-        this.fetchAlbumCover();
-      }, 500);
-    },
+
     _getResourceCacheKey() {
       const res = Number(this.maxResolution) || 368;
       return `cover_${res}_${this.id}`;
     },
+
+    fadeOutImage() {
+      this.imageOpacity = 0;
+      this.nextTransilateTime = Date.now() + 500;
+      setTimeout(() => {
+        this.fetchAlbumCover();
+      }, 500);
+    },
+
     acquireResource(data) {
       if (!data?.objectURL) return;
 
-      this.cacheKey = this._getResourceCacheKey();
+      const newCacheKey = this._getResourceCacheKey();
+
+      if (this.cacheKey && this.cacheKey !== newCacheKey) {
+        this._releaseRefOnly();
+      }
+
+      this.cacheKey = newCacheKey;
       const cached = lazyLoader.acquire(this.cacheKey, this.$refs.containerRef);
 
       if (cached) {
-        this.objectURL = cached.objectURL;
         this.currentSrc = cached.objectURL;
-        this.destroyObjectURL = () => {};
       } else {
-        this.objectURL = data.objectURL;
         this.currentSrc = data.objectURL;
-        this.destroyObjectURL = data.destroyObjectURL || (() => {});
       }
     },
-    releaseResource() {
+
+    _releaseRefOnly() {
       if (!this.cacheKey) return;
-
       lazyLoader.release(this.cacheKey, this.$refs.containerRef);
-
-      if (this.destroyObjectURL) {
-        try {
-          this.destroyObjectURL();
-        } catch (e) {}
-      }
-
-      this.currentSrc = '';
-      this.imageOpacity = 0;
       this.cacheKey = null;
     },
+
     async fetchAlbumCover() {
+      const targetId = this.id;
+      const targetKey = this._getResourceCacheKey();
+
+      if (this.cacheKey === targetKey && this.currentSrc) {
+        this.handleImageLoad();
+        return;
+      }
+
+      this.pendingId = targetId;
       this.isLoading = true;
-      this.releaseResource();
+      this._releaseRefOnly();
 
       let result_message = null;
       const resolution = Number(this.maxResolution) || 0;
 
       if (resolution !== 0) {
-        const cacheKey = this._getResourceCacheKey();
-        const isFromCache = lazyLoader.isCached(cacheKey);
-
+        const isFromCache = lazyLoader.isCached(targetKey);
         if (!isFromCache) {
           result_message = this.regMessage({
             type: "LongMessage",
@@ -124,7 +126,9 @@ export default {
       }
 
       try {
-        const result = await manager.tauri.getAlbumCover(this.id, this.maxResolution);
+        const result = await manager.tauri.getAlbumCover(targetId, this.maxResolution);
+
+        if (this.pendingId !== targetId) return;
 
         this.acquireResource(result);
         result_message?.destoryMessage?.();
@@ -136,13 +140,15 @@ export default {
         }
         result_message?.destoryMessage?.();
       } finally {
-        this.isLoading = false;
+        if (this.pendingId === targetId) {
+          this.isLoading = false;
+          this.pendingId = null;
+        }
       }
     },
   },
   watch: {
     id: {
-      immediate: true,
       handler(newId, oldId) {
         if (newId !== oldId && newId >= 0) {
           this.fadeOutImage();
@@ -151,7 +157,9 @@ export default {
     },
   },
   unmounted() {
-    this.releaseResource();
+    this._releaseRefOnly();
+    this.currentSrc = '';
+    this.imageOpacity = 0;
   },
   mounted() {
     if (this.id >= 0) {

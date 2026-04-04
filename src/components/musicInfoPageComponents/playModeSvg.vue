@@ -10,7 +10,7 @@
         },
         computed:{
             _class(){
-                const mode = this.player?.playMode || 'loopPlaylist';
+                const mode = this.player?.state?.playMode || 'loopPlaylist';
                 switch (mode) {
                     case 'loopPlaylist':
                         return ['bi','bi-repeat']
