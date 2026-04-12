@@ -359,27 +359,42 @@ defineExpose({ coverImagePlaceHolder })
   box-sizing: border-box;
 }
 
-/* ===== Padding System ===== */
+/* ===== Adaptive Spacing System ===== */
+:root {
+  /* Base spacing variables */
+  --space-xs: clamp(4px, 0.5vw, 8px);
+  --space-sm: clamp(8px, 1vw, 16px);
+  --space-md: clamp(12px, 1.5vw, 24px);
+  --space-lg: clamp(16px, 2vw, 32px);
+  --space-xl: clamp(24px, 3vw, 48px);
+  
+  /* Gap variables */
+  --gap-xs: clamp(4px, 0.5vh, 8px);
+  --gap-sm: clamp(6px, 1vh, 14px);
+  --gap-md: clamp(8px, 1.5vh, 20px);
+  --gap-lg: clamp(12px, 2vh, 28px);
+}
+
 .layout-desktop {
-  --pad-x: clamp(16px, 3vw, 48px);
-  --pad-y: clamp(12px, 2vh, 32px);
-  --gap: clamp(8px, 1.5vh, 20px);
+  --pad-x: var(--space-xl);
+  --pad-y: var(--space-lg);
+  --gap: var(--gap-md);
 }
 
 .layout-mobile {
-  --pad-x: clamp(12px, 4vw, 28px);
-  --pad-y: clamp(8px, 1.5vh, 20px);
-  --gap: clamp(6px, 1vh, 14px);
+  --pad-x: var(--space-md);
+  --pad-y: var(--space-sm);
+  --gap: var(--gap-sm);
 }
 
 .layout-square {
-  --pad-x: clamp(10px, 3vw, 24px);
-  --pad-y: clamp(8px, 2vh, 20px);
-  --gap: clamp(6px, 1vh, 12px);
+  --pad-x: var(--space-md);
+  --pad-y: var(--space-sm);
+  --gap: var(--gap-sm);
 }
 
 .layout-strip {
-  --pad-x: clamp(8px, 2vw, 20px);
+  --pad-x: var(--space-sm);
   --pad-y: 0px;
   --gap: 0px;
 }
@@ -481,6 +496,8 @@ defineExpose({ coverImagePlaceHolder })
 .layout-strip {
   align-items: center;
   padding: var(--pad-y) var(--pad-x);
+  gap: var(--gap);
+  min-height: 60px;
 }
 
 /* ===== Unsupported Layout ===== */

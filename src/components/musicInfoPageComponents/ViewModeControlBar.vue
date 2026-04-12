@@ -1,8 +1,8 @@
 <template>
-  <div class="musicDetailButton">
+  <div class="view-mode-control-bar">
     <suspendingBox :theme="'light'" :direction="'top'" :hoverOnly="true">
       <template #placeholder>
-        <button_block :actived="isMusicListActive" @click="handleMusicListClick">
+        <button_block :actived="isMusicListActive" @click="handleMusicListClick" class="control-button">
           <i class="bi bi-music-note-list"></i>
         </button_block>
       </template>
@@ -12,7 +12,7 @@
     </suspendingBox>
     <suspendingBox :theme="'light'" :direction="'top'" :hoverOnly="true">
       <template #placeholder>
-        <button_block :actived="isAlbumActive" @click="handleAlbumClick">
+        <button_block :actived="isAlbumActive" @click="handleAlbumClick" class="control-button">
           <i class="bi bi-vinyl"></i>
         </button_block>
       </template>
@@ -22,7 +22,7 @@
     </suspendingBox>
     <suspendingBox :theme="'light'" :direction="'top'" :hoverOnly="true">
       <template #placeholder>
-        <button_block :actived="isLyricActive" @click="handleLyricClick">
+        <button_block :actived="isLyricActive" @click="handleLyricClick" class="control-button">
           <i class="bi bi-text-left"></i>
         </button_block>
       </template>
@@ -132,14 +132,46 @@ function handleLyricClick() {
 </script>
 
 <style scoped>
-.musicDetailButton {
+.view-mode-control-bar {
   display: flex;
-  justify-content: space-between;
+  gap: clamp(0.5em, 1.5vw, 0.75em);
   align-items: center;
+  padding: clamp(0.375em, 1vw, 0.5em);
+  border-radius: 0.625em;
+  background-color: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--Shadow-value-low);
+  transition: all 0.3s ease;
 }
 
-.musicDetailButton > * {
-  flex-shrink: 0;
-  font-size: 1em;
+.view-mode-control-bar:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.control-button {
+  font-size: 1.1em;
+  transition: all 0.3s ease;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .view-mode-control-bar {
+    gap: 0.5em;
+    padding: 0.375em;
+  }
+  
+  .control-button {
+    font-size: 1em;
+  }
+}
+
+/* 移动设备特定样式 */
+:deep(.mobile-control-bar) {
+  justify-content: center;
+  margin: 0.5em 0;
+  width: 100%;
+  max-width: 300px;
+  margin-left: auto;
+  margin-right: auto;
 }
 </style>

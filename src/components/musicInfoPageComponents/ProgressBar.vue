@@ -69,7 +69,7 @@ export default {
             const dom = this.$refs.progressBarDom;
             if (!dom) return;
 
-            this.registration = progressBarReg(dom, () => {
+            this.registration = baseMethods.progressBarReg(dom, () => {
                 return this.progress;
             }, (info) => {
                 if (info.draging === true) {
@@ -85,137 +85,17 @@ export default {
         }
     }
 };
-
-/**
- * 进度条交互注册逻辑，提取自 baseMethods.progressBarReg
- * 支持鼠标拖拽、触摸拖拽和悬停交互
- */
-function progressBarReg(progressBarDom, getCurrentProgress, progressUpdate) {
-    let info = {
-        currentProgress: 0,
-        beforeDragProgress: 0,
-        dragProgress: 0,
-        BeforeHoveringProgress: 0,
-        hoveringProgress: 0,
-        draging: false,
-        hovering: false,
-        domWidth: null,
-        offsetX: null,
-    };
-
-    let onInfoChange = () => {
-        progressUpdate(info);
-        progressBarDom.style.setProperty('--currentProgress', info.currentProgress);
-        progressBarDom.style.setProperty('--beforeDragProgress', info.beforeDragProgress);
-        progressBarDom.style.setProperty('--dragProgress', info.dragProgress);
-        progressBarDom.style.setProperty('--BeforeHoveringProgress', info.BeforeHoveringProgress);
-        progressBarDom.style.setProperty('--hoveringProgress', info.hoveringProgress);
-        progressBarDom.style.setProperty('--draging', info.draging);
-        progressBarDom.style.setProperty('--hovering', info.hovering);
-    };
-
-    const handleTouchStart = (e) => {
-        if (e.touches.length === 1) {
-            info.beforeDragProgress = getCurrentProgress();
-
-            document.addEventListener('touchmove', handleTouchMove);
-            document.addEventListener('touchend', handleTouchEnd);
-            info.draging = true;
-            const rect = progressBarDom.getBoundingClientRect();
-            info.offsetX = e.touches[0].clientX - rect.left;
-            info.domWidth = rect.width;
-            onInfoChange();
-        }
-    };
-
-    const handleTouchMove = (e) => {
-        if (info.draging && e.touches.length === 1) {
-            const x = e.touches[0].clientX;
-            const rect = progressBarDom.getBoundingClientRect();
-            info.dragProgress = (x - rect.left - info.offsetX) / info.domWidth;
-            info.currentProgress = info.beforeDragProgress + info.dragProgress;
-            onInfoChange();
-        }
-    };
-
-    const handleTouchEnd = () => {
-        if (info.draging) {
-            info.draging = false;
-            info.currentProgress = info.beforeDragProgress + info.dragProgress;
-            onInfoChange();
-        }
-    };
-
-    const handleMouseDown = (e) => {
-        info.beforeDragProgress = getCurrentProgress();
-
-        info.draging = true;
-
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        const rect = progressBarDom.getBoundingClientRect();
-        info.offsetX = e.clientX - rect.left;
-        info.domWidth = rect.width;
-        onInfoChange();
-    };
-
-    const handleMouseMove = (e) => {
-        if (info.draging) {
-            const x = e.clientX;
-            const rect = progressBarDom.getBoundingClientRect();
-            info.dragProgress = (x - rect.left - info.offsetX) / info.domWidth;
-            info.currentProgress = info.beforeDragProgress + info.dragProgress;
-            onInfoChange();
-        }
-    };
-
-    const handleMouseUp = (e) => {
-        if (info.draging) {
-            info.draging = false;
-            info.currentProgress = info.beforeDragProgress + info.dragProgress;
-            onInfoChange();
-        }
-    };
-
-    const handleMouseEnter = (e) => {
-        info.hovering = true;
-        info.BeforeHoveringProgress = info.currentProgress;
-        progressBarDom.addEventListener('mouseleave', handleMouseLeave);
-        onInfoChange();
-    };
-
-    const handleMouseLeave = (e) => {
-        info.hovering = false;
-        info.currentProgress = info.BeforeHoveringProgress;
-        onInfoChange();
-    };
-
-    progressBarDom.addEventListener('touchstart', handleTouchStart);
-    progressBarDom.addEventListener('mousedown', handleMouseDown);
-    progressBarDom.addEventListener('mouseenter', handleMouseEnter);
-
-    return {
-        cancelReg: () => {
-            progressBarDom.removeEventListener('touchstart', handleTouchStart);
-            document.removeEventListener('touchmove', handleTouchMove);
-            document.removeEventListener('touchend', handleTouchEnd);
-            progressBarDom.removeEventListener('mousedown', handleMouseDown);
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-            progressBarDom.removeEventListener('mouseenter', handleMouseEnter);
-            progressBarDom.removeEventListener('mouseleave', handleMouseLeave);
-        }
-    };
-}
 </script>
 
 <style scoped>
 .bar_ProgressBoxContainer {
     width: 100%;
-    height: 3px;
-    margin: -0px 0 0 0;
-    background-color: #0002;
+    height: 4px;
+    margin: 0;
+    background-color: rgba(0, 0, 0, 0.1);
     box-shadow: var(--Shadow-value-low);
+    border-radius: 2px;
+    overflow: hidden;
 }
 
 .bar_ProgressBoxContainer .insert {
@@ -223,52 +103,88 @@ function progressBarReg(progressBarDom, getCurrentProgress, progressUpdate) {
     height: 100%;
     background-color: var(--color-toggle-actived);
     box-shadow: var(--Shadow-value-low);
+    transition: width 0.3s ease;
+}
+
+.infoPage_ProgressContainer {
+    width: 100%;
 }
 
 .infoPage_ProgressContainer .progressBoxContainer {
-    height: 1.875em;
+    height: 2em;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    margin-bottom: 0.125em;
-}
-
-.infoPage_ProgressContainer .progressBoxContainer:hover .progressBox {
-    background-color: #fff5;
-    width: 104%;
-    height: 1.125em;
-    border-radius: 0.5625em;
-    margin: 0 -2%;
-}
-
-.infoPage_ProgressContainer .progressBoxContainer:hover .progressInsert {
-    background-color: #fffd;
+    margin-bottom: 0.5em;
 }
 
 .infoPage_ProgressContainer .progressBox {
     position: relative;
-    margin: 0 0%;
     width: 100%;
     height: 0.875em;
     border-radius: 0.4375em;
     box-shadow: var(--Shadow-value-offsetY-low);
-    background-color: #fff3;
+    background-color: rgba(255, 255, 255, 0.2);
     cursor: pointer;
-    transition: 0.2s ease-in-out;
+    transition: all 0.2s ease-in-out;
     overflow: hidden;
+}
+
+.infoPage_ProgressContainer .progressBox:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+    height: 1em;
 }
 
 .infoPage_ProgressContainer .progressInsert {
     height: 100%;
-    transition: background-color 0.2s ease-in-out;
-    background-color: #fff7;
+    background-color: var(--color-toggle-actived);
     width: calc(var(--progress) * 100%);
+    transition: all 0.3s ease;
+    box-shadow: var(--Shadow-value-low);
+}
+
+.infoPage_ProgressContainer .progressBox:hover .progressInsert {
+    background-color: var(--color-button-active);
 }
 
 .infoPage_ProgressContainer > .progressInfo {
     display: flex;
     justify-content: space-between;
-    font-size: 0.5625em;
-    color: #fff9;
+    font-size: 0.75em;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 500;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .infoPage_ProgressContainer .progressBox {
+        height: 0.75em;
+    }
+    
+    .infoPage_ProgressContainer .progressBox:hover {
+        height: 0.875em;
+    }
+    
+    .infoPage_ProgressContainer > .progressInfo {
+        font-size: 0.625em;
+    }
+}
+
+@media (max-width: 480px) {
+    .bar_ProgressBoxContainer {
+        height: 3px;
+    }
+    
+    .infoPage_ProgressContainer .progressBox {
+        height: 0.625em;
+    }
+    
+    .infoPage_ProgressContainer .progressBox:hover {
+        height: 0.75em;
+    }
+    
+    .infoPage_ProgressContainer > .progressInfo {
+        font-size: 0.5625em;
+    }
 }
 </style>

@@ -29,7 +29,7 @@
       @prev="$emit('prev')"
       @cyclePlayMode="$emit('cyclePlayMode')"
     />
-    <div class="musicDetailButton">
+    <div class="viewModeControls">
       <slot name="viewModeControls"></slot>
     </div>
   </div>
@@ -92,49 +92,108 @@ defineExpose({ coverImagePlaceHolder })
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  justify-content: space-evenly;
+  justify-content: space-between;
   box-sizing: border-box;
-  padding-bottom: 2.5em;
-  gap: 1.4em;
+  padding-bottom: clamp(1.5em, 4vh, 2em);
+  gap: clamp(0.8em, 2vh, 1.2em);
   width: v-bind(maxColumnWidth);
 }
 
 .coverImagePlaceHolder {
   background-position: center;
   background-size: cover;
-  border-radius: 1%;
+  border-radius: 8px;
   overflow: hidden;
   image-rendering: auto;
   width: v-bind(maxColumnWidth);
   aspect-ratio: 1 / 1;
   cursor: pointer;
   flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.coverImagePlaceHolder:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
 }
 
 .musicInfo {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
 }
 
 .musicInfo > .name {
   font-weight: 900;
   color: #fffe;
-  font-size: 1.3125em;
+  font-size: 1.25em;
+  line-height: 1.3;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .musicInfo > .artists {
   font-size: 0.875em;
   color: #fff9;
+  line-height: 1.4;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
 }
 
-.musicDetailButton {
+.viewModeControls {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
-  width: v-bind(maxColumnWidth);
+  width: 100%;
+  margin-top: 0.5em;
 }
 
-.musicDetailButton > * {
+.viewModeControls > * {
   flex-shrink: 0;
-  font-size: 1em;
+}
+
+/* 响应式设计 */
+@media screen and (max-width: 768px) {
+  .album-info-vertical {
+    gap: 1em;
+    padding-bottom: 1.5em;
+  }
+  
+  .musicInfo > .name {
+    font-size: 1.125em;
+  }
+  
+  .musicInfo > .artists {
+    font-size: 0.8125em;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .album-info-vertical {
+    gap: 0.8em;
+    padding-bottom: 1.2em;
+  }
+  
+  .coverImagePlaceHolder {
+    border-radius: 6px;
+  }
+  
+  .musicInfo > .name {
+    font-size: 1em;
+  }
+  
+  .musicInfo > .artists {
+    font-size: 0.75em;
+  }
 }
 </style>
