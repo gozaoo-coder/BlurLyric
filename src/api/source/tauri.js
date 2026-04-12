@@ -16,12 +16,6 @@ import { invoke } from '@tauri-apps/api/core';
 import lazyLoader from '../lazyLoader.js';
 import { performanceMonitor } from '../performanceMonitor.js';
 
-// 使用 Map 替代对象提高缓存管理效率
-const objectURLCache = new Map();
-const objectURLCounter = new Map();
-const requestCache = new Map();
-
-// 应用本地数据缓存结构
 const onCacheUpdateListeners = new Map();
 const appLocalDataCache = {
     musicList: {
@@ -51,68 +45,6 @@ const updateAppLocalData = (path, data) => {
     } else {
         console.error(`Invalid cache path: ${path}`);
     }
-};
-
-const setObjectURL = (id, objectURL) => {
-    if (objectURLCache.has(id)) {
-        objectURLCounter.set(id, objectURLCounter.get(id) + 1);
-        return objectURLCache.get(id);
-    }
-
-    objectURLCache.set(id, objectURL);
-    objectURLCounter.set(id, 1);
-    return objectURL;
-};
-
-const getObjectURL = (id) => {
-    if (!objectURLCache.has(id)) {
-        throw new Error(`Object URL for ${id} is not available.`);
-    }
-
-    objectURLCounter.set(id, objectURLCounter.get(id) + 1);
-    return objectURLCache.get(id);
-};
-
-const destroyObjectURL = (id) => {
-    if (!objectURLCache.has(id)) return;
-
-    const count = objectURLCounter.get(id) - 1;
-    objectURLCounter.set(id, count);
-
-    if (count <= 0) {
-        URL.revokeObjectURL(objectURLCache.get(id));
-        objectURLCache.delete(id);
-        objectURLCounter.delete(id);
-    }
-};
-
-// 增强型请求处理器
-const handleAPIRequest = async (key, invokeFunction, params) => {
-    if (objectURLCache.has(key)) {
-        return {
-            objectURL: getObjectURL(key),
-            destroyObjectURL: () => destroyObjectURL(key)
-        };
-    }
-
-    if (requestCache.has(key)) {
-        return requestCache.get(key);
-    }
-
-    const requestPromise = invoke(invokeFunction, params)
-        .then(data => {
-            const objectURL = URL.createObjectURL(new Blob([data]));
-            setObjectURL(key, objectURL);
-            requestCache.delete(key);
-            return { objectURL, destroyObjectURL: () => destroyObjectURL(key) };
-        })
-        .catch(error => {
-            requestCache.delete(key);
-            throw error;
-        });
-
-    requestCache.set(key, requestPromise);
-    return requestPromise;
 };
 
 // 使用全大写命名常量

@@ -6,9 +6,9 @@ import drag from '../js/drag';
 import textSpawn from './base/text-spawn.vue';
 import anime from 'animejs';
 import background from './musicInfoPageComponents/background.vue';
-import contain from './musicInfoPageComponents/contain.vue';
-import button_block from './musicInfoPageComponents/button_block.vue'
-import button_circle from './musicInfoPageComponents/button_circle.vue'
+import ProgressBar from './musicInfoPageComponents/ProgressBar.vue';
+import AdaptiveLayout from './musicInfoPageComponents/AdaptiveLayout.vue';
+import { useViewportAdapter } from './musicInfoPageComponents/composables/useViewportAdapter.js';
 import {
     computed,
 } from 'vue'
@@ -23,7 +23,7 @@ const EMPTY_TRACK = {
 
 function safePlayer(player) {
     return player || {
-        state: { currentTrack: EMPTY_TRACK, playing: false, currentTime: 0, duration: 1, currentTimeRound: 0, durationRound: 0 },
+        state: { currentTrack: EMPTY_TRACK, playing: false, currentTime: 0, duration: 1, currentTimeRound: 0, durationRound: 0, currentIndex: 0 },
         playMode: 'loopPlaylist',
         playlist: { getAll: () => [], getNextIndex: () => 0 },
         audioEngine: { play() {}, pause() {} },
@@ -32,11 +32,24 @@ function safePlayer(player) {
         play() {},
         pause() {},
         cyclePlayMode() {},
-        seekByProgress() {}
+        seekByProgress() {},
+        switchTo() {}
     };
 }
 
 export default {
+    setup() {
+        const viewportAdapter = useViewportAdapter();
+        return {
+            deviceType: viewportAdapter.deviceType,
+            displayMode: viewportAdapter.displayMode,
+            setDisplayMode: viewportAdapter.setDisplayMode,
+            isDesktop: viewportAdapter.isDesktop,
+            isMobile: viewportAdapter.isMobile,
+            isSquare: viewportAdapter.isSquare,
+            isStrip: viewportAdapter.isStrip,
+        };
+    },
     data() {
         return {
             baseMethods,
@@ -48,8 +61,6 @@ export default {
 
             UIScale_userSet: 1,
             UIScale_autoSet: 1,
-            UIMode: 'desktop',
-            UIMode_enum: ['mobile', 'tablet', 'desktop'],
             maxColumnWidth: "min(50vh, 40vw)",
 
             dragInfo: null,
@@ -83,7 +94,13 @@ export default {
             }
             return playlist[nextIndex]?.name || '';
         },
-
+        playlistTracks() {
+            return this.p.playlist.getAll();
+        },
+        UIScale() {
+            const scale = this.UIScale_userSet !== 1 ? this.UIScale_userSet : this.UIScale_autoSet;
+            return scale + 'rem';
+        }
     },
     components: {
         lazyLoadCoverImage,
@@ -91,10 +108,8 @@ export default {
         playModeSvg,
         textSpawn,
         background,
-        contain,
-
-        button_block,
-        button_circle
+        ProgressBar,
+        AdaptiveLayout,
     },
     provide() {
         return {
@@ -103,24 +118,7 @@ export default {
     },
     inject: ['player', 'regResizeHandle', 'config', 'scrollState'],
     mounted() {
-
         this.onBottomListener();
-
-        ([
-            this.$refs.progressBoxContainer,
-            this.$refs.bar_ProgressBoxContainer
-        ]).map((elm) => {
-
-            baseMethods.progressBarReg(elm, () => {
-                const s = this.p.state;
-                if (!s.duration || s.duration <= 0) return 0;
-                return s.currentTime / s.duration
-            }, (info) => {
-                if (info.draging == true) {
-                    this.p.seekByProgress(info.currentProgress)
-                }
-            })
-        })
     },
     beforeUnmount() {
         this.eventListenerRemovers.map((value) => value())
@@ -226,14 +224,17 @@ export default {
                 cover_position_bind(speed)
             }
             let cover_position_bind = (speed) => {
-                let positionData = this.$refs.coverImagePlaceHolder.getBoundingClientRect()
+                let coverImagePlaceHolder = this.$refs.adaptiveLayoutRef?.coverImagePlaceHolder;
+                if (!coverImagePlaceHolder) return;
+
+                let positionData = coverImagePlaceHolder.getBoundingClientRect()
 
                 this.trackAnimation(anime({
                     targets: this.$refs.cover,
                     easing: 'spring(1, 80, 15,' + speed + ')',
                     width: positionData.width,
                     height: positionData.height,
-                    translateY: (this.$refs.coverImagePlaceHolder.offsetTop + 41) + 'px',
+                    translateY: (coverImagePlaceHolder.offsetTop) + 'px',
                     translateX: positionData.x + 'px'
                 }))
             }
@@ -374,35 +375,18 @@ export default {
                 })
             this.eventListenerRemovers.push(callBack_drag.destroy)
         },
-        adjustedMaxColumnWidth() {
-            let isMobilePortrait = window.innerWidth <= 480;
-            let isTabletPortrait = window.innerWidth > 480 && window.innerWidth <= 768;
-            let isDesktop = window.innerWidth > 768;
-            if (isMobilePortrait) {
-                this.UIMode = 'mobile';
-                return '76vw';
-            } else if (isTabletPortrait) {
-                this.UIMode = 'tablet';
-                return 'min(76vw,48vh)';
 
-            } else if (isDesktop) {
-                this.UIMode = 'desktop';
-
-                return this.maxColumnWidth;
-            }
+        handleModeChange(mode) {
+            this.setDisplayMode(mode);
         },
-        UIScale() {
-            let isMobile = window.innerWidth <= 768;
-            let isTablet = window.innerWidth > 768 && window.innerWidth <= 1024;
-            let isDesktop = window.innerWidth > 1024;
-
-            if (isMobile) {
-                return (this.UIScale_userSet != 1 ? this.UIScale_userSet : this.UIScale_autoSet) + 'rem';
-            } else if (isTablet) {
-                return (this.UIScale_userSet != 1 ? this.UIScale_userSet : this.UIScale_autoSet) + 'rem';
-            } else if (isDesktop) {
-                return (this.UIScale_userSet != 1 ? this.UIScale_userSet : this.UIScale_autoSet) + 'rem';
-            }
+        handleSwitchTrack(index) {
+            this.p.switchTo(index);
+        },
+        handleSwipeDown() {
+            this.toBottom({ speedY: 1.5 });
+        },
+        handleDetailClick() {
+            // placeholder for detail click handling
         }
     }
 }
@@ -412,19 +396,15 @@ export default {
         transform: translateY(-88px);background:rgba(0,0,0,0.0625);
         " class="global_backgroundblur_light musicInfoPageRow">
 
-        <div :class="['relativeBox',`mode-${UIMode}`]">
+        <div :class="['relativeBox', `mode-${deviceType}`]">
 
             <div ref="cover" style="transform: translateX(17px) translateY(17px); " class="cover">
                 <lazyLoadCoverImage class="blur" :id="p.state.currentTrack.al.id"></lazyLoadCoverImage>
                 <lazyLoadCoverImage :maxResolution="0" :id="p.state.currentTrack.al.id"></lazyLoadCoverImage>
             </div>
 
+            <ProgressBar ref="barProgressBar" variant="bar" :progress="progress" />
 
-            <div ref="bar_ProgressBoxContainer" :style="{
-                '--progress': progress
-            }" class="bar_ProgressBoxContainer">
-                <div class="insert"></div>
-            </div>
             <div ref="musicControlBar" class="musicControlBar">
                 <div class="cover placeholder">
                 </div>
@@ -439,15 +419,13 @@ export default {
                         <div class="currentMusic">
                             <div class="name">
                                 <textSpawn :text="p.state.currentTrack.name" />
-
                             </div>
                             <div class="artists">
-                                <span v-for="(value, index) in p.state.currentTrack.ar">
+                                <span v-for="(value, index) in p.state.currentTrack.ar" :key="index">
                                     <textSpawn
                                         :text="value.name + ((index != p.state.currentTrack.ar.length - 1) ? '/' : '')" />
                                 </span>
                                 <span v-if="p.state.currentTrack.al.id != -2"> - </span>{{ p.state.currentTrack.al.name }}
-
                             </div>
                         </div>
                         <div class="next">
@@ -499,6 +477,7 @@ export default {
                     </buttom_icon_circleBackground>
                 </div>
             </div>
+
             <div :style="{
                 'fontSize': UIScale,
                 'pointer-events': (musicInfoPagePosition == 'top') ? 'auto' : 'none',
@@ -509,129 +488,39 @@ export default {
                 <div class="controlBar">
                     <div ref="controlTapBar" class="tapBar"></div>
                 </div>
-                <div :style="{
-                    '--maxColumnWidth': adjustedMaxColumnWidth()
-                }" class="musicDetail">
 
-                    <div ref="coverImagePlaceHolder" class="coverImagePlaceHolder">
-                    </div>
-                    <div class="musicInfo">
-                        <div class="name">
-                            <textSpawn :text="p.state.currentTrack.name" />
-                        </div>
-                        <div class="artists">
-                            <span v-for="(value, index) in p.state.currentTrack.ar">
-                                <textSpawn
-                                    :text="value.name + ((index != p.state.currentTrack.ar.length - 1) ? '/' : '')" />
-                            </span>
-                            <span v-if="p.state.currentTrack.al.id != -2"> - </span>{{ p.state.currentTrack.al.name }}
-                        </div>
-
-                    </div>
-                    <div class="infoPage_ProgressContainer">
-                        <div ref="progressBoxContainer" :style="{
-                            '--progress': progress
-                        }" class="progressBoxContainer">
-                            <div class="progressBox">
-                                <div class="progressInsert"></div>
-                            </div>
-                        </div>
-                        <div class="progressInfo">
-                            <div class="current">
-                                {{ baseMethods.formatTime_MMSS(p.state.currentTimeRound) }}
-                            </div>
-                            <div class="duration">
-                                {{ baseMethods.formatTime_MMSS(p.state.durationRound) }}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="musicDetailButton">
-                        <button_circle @click="p.cyclePlayMode()">
-                            <playModeSvg style="transform: scale(.75) translateY(1%);transform-origin: 50% 50%;">
-                            </playModeSvg>
-                        </button_circle>
-
-
-                        <button_circle @click="p.prev({ isManual: true })">
-                            <i class="bi bi-skip-start-fill"></i>
-                        </button_circle>
-                        <button_circle
-                            @click="(p.state.playing == true) ? p.pause() : p.play()"
-                            class="playButtom">
-                            <div style="transform: scale(1.5);transform-origin: 50% 50%;">
-                                <i v-if="p.state.playing == true" class="bi bi-pause-fill"></i>
-                                <i v-if="p.state.playing == false" class="bi bi-play-fill"></i>
-                            </div>
-                        </button_circle>
-                        <button_circle @click="p.next({ isManual: true })">
-                            <i class="bi bi-skip-end-fill"></i>
-                        </button_circle>
-                        <button_circle>
-                            <i style="transform: scale(.75) translateY(1%);transform-origin: 50% 50%;"
-                                class="bi-volume-up bi"></i>
-                        </button_circle>
-                    </div>
-                    <div class="musicDetailButton">
-                        <suspendingBox :theme="'light'" :direction="'top'" :hoverOnly="true">
-                            <template #placeholder>
-                                <button_block>
-                                    <i class="bi bi-music-note-list"></i>
-                                </button_block>
-                            </template>
-                            <template #suspendContent>
-                                <div>
-                                    展示音乐列表
-                                </div>
-                            </template>
-                        </suspendingBox>
-                        <suspendingBox :theme="'light'" :direction="'top'" :hoverOnly="true">
-                            <template #placeholder>
-
-                                <button_block :actived="true">
-                                    <i class="bi bi-vinyl"></i>
-                                </button_block>
-                            </template>
-                            <template #suspendContent>
-                                <div>
-                                    仅显示专辑信息
-                                </div>
-                            </template>
-                        </suspendingBox>
-                        <suspendingBox :theme="'light'" :direction="'top'" :hoverOnly="true">
-                            <template #placeholder>
-
-                                <button_block>
-                                    <i class="bi bi-text-left"></i>
-                                </button_block>
-                            </template>
-                            <template #suspendContent>
-                                <div>
-                                    展示歌词
-                                </div>
-                            </template>
-                        </suspendingBox>
-
-
-
-
-                    </div>
-                </div>
+                <AdaptiveLayout
+                    ref="adaptiveLayoutRef"
+                    :deviceType="deviceType"
+                    :displayMode="displayMode"
+                    :track="p.state.currentTrack"
+                    :progress="progress"
+                    :currentTime="p.state.currentTime"
+                    :duration="p.state.duration"
+                    :currentTimeRound="p.state.currentTimeRound"
+                    :durationRound="p.state.durationRound"
+                    :playing="p.state.playing"
+                    :playMode="p.playMode"
+                    :tracks="playlistTracks"
+                    :currentIndex="p.state.currentIndex"
+                    :maxColumnWidth="maxColumnWidth"
+                    :musicInfoPagePosition="musicInfoPagePosition"
+                    @play="p.play()"
+                    @pause="p.pause()"
+                    @next="p.next({ isManual: true })"
+                    @prev="p.prev({ isManual: true })"
+                    @cyclePlayMode="p.cyclePlayMode()"
+                    @seekByProgress="p.seekByProgress($event)"
+                    @modeChange="handleModeChange"
+                    @switchTrack="handleSwitchTrack"
+                    @swipeDown="handleSwipeDown"
+                    @detailClick="handleDetailClick"
+                />
             </div>
         </div>
     </div>
 </template>
 <style scoped>
-.musicInfo>.name {
-    font-weight: 900;
-    color: #fffe;
-    font-size: 1.3125em;
-}
-
-.musicInfo>.artists {
-    font-size: 0.875em;
-    color: #fff9
-}
-
 .prev .event,
 .next .event {
     font-weight: 900;
@@ -673,81 +562,13 @@ export default {
     height: 100%
 }
 
-
-.mode-tablet .musicDetail,.mode-mobile .musicDetail {
-    justify-content: flex-end;
-}
-
-.mode-tablet .coverImagePlaceHolder,.mode-mobile .coverImagePlaceHolder {
-    margin: auto auto;
-}
-
-.musicDetail {
-    position: absolute;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-evenly;
-    box-sizing: border-box;
-    padding-bottom: 2.5em;
-    max-height: calc(100% - 48px);
-    gap: 1.4em;
-    left: 50%;
-    transform: translateX(-50%);
-    width: var(--maxColumnWidth);
-}
-
-.musicDetailButton {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.musicDetailButton>* {
-    flex-shrink: 0;
-    font-size: 1em;
-
-}
-.coverImagePlaceHolder {
-    grid-column: info-side;
-    grid-row: cover;
-
-    align-self: center;
-    justify-self: center;
-    background-position: center;
-    background-size: cover;
-    border-radius: 1%;
-    overflow: hidden;
-    image-rendering: auto;
-
-
-    height: var(--maxColumnWidth);
-
-    aspect-ratio: 1/1;
-    cursor: pointer;
-}
-
-.bar_ProgressBoxContainer {
-    width: 100%;
-    height: 3px;
-    margin: -0px 0 0 0;
-    background-color: #0002;
-    box-shadow: var(--Shadow-value-low);
-}
-
-.bar_ProgressBoxContainer .insert {
-    width: calc(var(--progress) * 100%);
-    height: 100%;
-    background-color: var(--color-toggle-actived);
-    box-shadow: var(--Shadow-value-low);
-}
-
 .mainContainer {
     user-select: none;
     opacity: 0;
     font-size: var(--adaptiveSize);
     color: rgb(255, 255, 255);
-
+    position: absolute;
+    inset: 0;
 }
 
 .tapBar {
@@ -789,7 +610,7 @@ export default {
 }
 
 .relativeBox {
-    display: relative;
+    position: relative;
     height: 100%;
     width: 100%;
 }
@@ -813,7 +634,7 @@ export default {
     height: 54px;
     width: 54px;
 
-    z-index: 1;
+    z-index: 5;
     top: 0;
     left: 0;
     aspect-ratio: 1/1;
@@ -885,28 +706,6 @@ export default {
     left: 100%;
 }
 
-.prev .event,
-.next .event {
-    font-weight: 900;
-    font-size: 18px;
-    color: #0066cd;
-}
-
-.currentMusic>.name {
-    font-size: 18px;
-    font-weight: 900;
-    color: #000c;
-}
-
-.currentMusic>.artists,
-.prev>.name,
-.next>.name {
-    font-size: 14px;
-
-    color: #000000AD;
-
-}
-
 .control {
     display: flex;
     color: #000c;
@@ -928,11 +727,6 @@ export default {
     padding: 0.4em;
 }
 
-.musicDetailButton .playButtom {
-    font-size: 1.75em;
-
-}
-
 @media screen and (max-width: 560px) {
     .control>* {
         display: none;
@@ -941,54 +735,5 @@ export default {
     .control>*.playButtom {
         display: inline-flex;
     }
-}
-
-.progressBoxContainer {
-    height: 1.875em;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    margin-bottom: 0.125em;
-}
-
-.progressBoxContainer:hover .progressBox {
-    background-color: #fff5;
-    width: 104%;
-    height: 1.125em;
-    border-radius: 0.5625em;
-    margin: 0 -2%;
-}
-
-.progressBoxContainer:hover .progressInsert {
-    background-color: #fffd;
-
-}
-
-.infoPage_ProgressContainer .progressBox {
-    position: relative;
-    margin: 0 0%;
-    width: 100%;
-
-    height: 0.875em;
-    border-radius: 0.4375em;
-    box-shadow: var(--Shadow-value-offsetY-low);
-    background-color: #fff3;
-    cursor: pointer;
-    transition: 0.2s ease-in-out;
-    overflow: hidden;
-}
-
-.infoPage_ProgressContainer .progressInsert {
-    height: 100%;
-    transition: background-color 0.2s ease-in-out;
-    background-color: #fff7;
-    width: calc(var(--progress) * 100%)
-}
-
-.infoPage_ProgressContainer>.progressInfo {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.5625em;
-    color: #fff9
 }
 </style>
