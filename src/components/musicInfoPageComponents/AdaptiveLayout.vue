@@ -19,19 +19,17 @@
             :playing="playing"
             :playMode="playMode"
             :maxColumnWidth="maxColumnWidth"
+            :active-mode="displayMode"
+            :device-type="deviceType"
             @play="$emit('play')"
             @pause="$emit('pause')"
             @next="$emit('next')"
             @prev="$emit('prev')"
             @cyclePlayMode="$emit('cyclePlayMode')"
             @seekByProgress="$emit('seekByProgress', $event)"
+            @mode-change="handleModeChange"
           />
         </div>
-        <ViewModeControlBar
-          :activeMode="displayMode"
-          :deviceType="deviceType"
-          @modeChange="handleModeChange"
-        />
       </template>
 
       <!-- Desktop - lyricOnly -->
@@ -79,12 +77,15 @@
             :playing="playing"
             :playMode="playMode"
             :maxColumnWidth="maxColumnWidth"
+            :active-mode="displayMode"
+            :device-type="deviceType"
             @play="$emit('play')"
             @pause="$emit('pause')"
             @next="$emit('next')"
             @prev="$emit('prev')"
             @cyclePlayMode="$emit('cyclePlayMode')"
             @seekByProgress="$emit('seekByProgress', $event)"
+            @mode-change="handleModeChange"
           />
         </div>
         <div class="right-column">
@@ -94,13 +95,6 @@
             :tracks="tracks"
             :currentIndex="currentIndex"
             @switchTrack="$emit('switchTrack', $event)"
-          />
-        </div>
-        <div class="ViewModeControlBar-wrapper">
-          <ViewModeControlBar
-            :activeMode="displayMode"
-            :deviceType="deviceType"
-            @modeChange="handleModeChange"
           />
         </div>
       </template>
@@ -125,20 +119,17 @@
             :playing="playing"
             :playMode="playMode"
             :maxColumnWidth="maxColumnWidth"
+            :active-mode="displayMode"
+            :device-type="deviceType"
             @play="$emit('play')"
             @pause="$emit('pause')"
             @next="$emit('next')"
             @prev="$emit('prev')"
             @cyclePlayMode="$emit('cyclePlayMode')"
             @seekByProgress="$emit('seekByProgress', $event)"
+            @mode-change="handleModeChange"
           />
         </div>
-        <ViewModeControlBar
-          :activeMode="displayMode"
-          :deviceType="deviceType"
-          class="mobile-control-bar"
-          @modeChange="handleModeChange"
-        />
       </template>
 
       <!-- Mobile - lyricOnly -->
