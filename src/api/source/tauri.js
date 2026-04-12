@@ -13,6 +13,7 @@
 import { Source, SOURCE_TYPE } from './base.js';
 import { Trace, TraceDataType, FetchMethodType } from './trace.js';
 import { invoke } from '@tauri-apps/api/core';
+import { requestPermission } from '@tauri-apps/api/permission';
 import lazyLoader from '../lazyLoader.js';
 import { performanceMonitor } from '../performanceMonitor.js';
 
@@ -137,6 +138,9 @@ export class TauriSource extends Source {
         this.performanceMonitor.startResourceTimer(timerId);
         
         try {
+            // 确保有存储权限
+            await this.requestStoragePermission();
+            
             const result = await invoke("get_music_list");
             updateAppLocalData('musicList', result);
             return result;
@@ -146,22 +150,34 @@ export class TauriSource extends Source {
     }
 
     async getAllMusicDirs() {
+        // 确保有存储权限
+        await this.requestStoragePermission();
+        
         const result = await invoke("get_all_music_dirs");
         updateAppLocalData('folders', result);
         return result;
     }
 
     async addMusicDirs(dirs) {
+        // 确保有存储权限
+        await this.requestStoragePermission();
+        
         const dirArray = Array.isArray(dirs) ? dirs : [dirs];
         return await invoke("add_music_dirs", { newDirs: dirArray });
     }
 
     async removeMusicDirs(dirs) {
+        // 确保有存储权限
+        await this.requestStoragePermission();
+        
         const dirArray = Array.isArray(dirs) ? dirs : [dirs];
         return await invoke("remove_music_dirs", { dirsToRemove: dirArray });
     }
 
     async refreshMusicCache() {
+        // 确保有存储权限
+        await this.requestStoragePermission();
+        
         await invoke("refresh_music_cache");
 
         // 获取音乐列表
@@ -493,8 +509,29 @@ export class TauriSource extends Source {
 
     // ========== 初始化 ==========
 
+    // ========== 权限管理 ==========
+    
+    async requestStoragePermission() {
+        try {
+            // 请求存储权限
+            const result = await requestPermission('storage');
+            console.log('Storage permission request result:', result);
+            return result === 'granted';
+        } catch (error) {
+            console.error('Failed to request storage permission:', error);
+            return false;
+        }
+    }
+
     async initApplication() {
         console.log('initApplication with optimized resource management');
+        
+        // 先请求存储权限
+        const hasPermission = await this.requestStoragePermission();
+        if (!hasPermission) {
+            console.warn('Storage permission not granted, some features may not work');
+        }
+        
         await invoke('init_application');
     }
 
