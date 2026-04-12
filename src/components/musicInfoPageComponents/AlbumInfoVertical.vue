@@ -30,7 +30,13 @@
       @cyclePlayMode="$emit('cyclePlayMode')"
     />
     <div class="musicDetailButton">
-      <slot name="viewModeControls"></slot>
+      <slot name="viewModeControls">
+        <ViewModeControlBar
+          :active-mode="activeMode"
+          :device-type="deviceType"
+          @mode-change="$emit('modeChange', $event)"
+        />
+      </slot>
     </div>
   </div>
 </template>
@@ -39,6 +45,7 @@
 import { ref } from 'vue'
 import ProgressBar from './ProgressBar.vue'
 import PlaybackControls from './PlaybackControls.vue'
+import ViewModeControlBar from './ViewModeControlBar.vue'
 import textSpawn from '../base/text-spawn.vue'
 
 const props = defineProps({
@@ -77,10 +84,18 @@ const props = defineProps({
   maxColumnWidth: {
     type: String,
     default: 'min(50vh, 40vw)'
+  },
+  activeMode: {
+    type: String,
+    required: true
+  },
+  deviceType: {
+    type: String,
+    required: true
   }
 })
 
-defineEmits(['play', 'pause', 'next', 'prev', 'cyclePlayMode', 'seekByProgress'])
+defineEmits(['play', 'pause', 'next', 'prev', 'cyclePlayMode', 'seekByProgress', 'modeChange'])
 
 const coverImagePlaceHolder = ref(null)
 
