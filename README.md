@@ -25,6 +25,21 @@ npm run tauri build
 - 5.❌ 多设备、尺寸适配。
 - 6.❌ 串流播放。
 
+## 核心模块文档
+
+### 架构设计
+- [项目概述](docs/01-项目概述.md)
+- [系统架构](docs/02-系统架构.md)
+- [接口规范](docs/05-接口规范.md)
+
+### 核心模块
+- **[网络仓库设计与实现](docs/10-网络仓库设计与实现.md)** - 多数据源统一管理、Trace来源追踪
+- **[网络媒体设计与实现](docs/11-网络媒体设计与实现.md)** - 资源管理、引用计数、缓存机制
+
+### 重构规划
+- [音乐播放模块重构规划](docs/09-音乐播放模块重构规划.md)
+- [Rust后端优化方案](docs/rust后端优化方案/00-总览与执行路线图.md)
+
 ### 特别感谢以下项目为我们提供灵感、参考设计和功能代码：
 - [Binaryify/NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi)
 - [qier222/YesPlayMusic](https://github.com/qier222/YesPlayMusic)
