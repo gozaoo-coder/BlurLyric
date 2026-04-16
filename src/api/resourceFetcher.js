@@ -338,6 +338,9 @@ export class ResourceFetcher {
      * @returns {Promise<ArrayBuffer>}
      */
     async #fetchFromApi(baseUrl, params) {
+        if (!baseUrl) {
+            throw new Error('Base URL is required for API request');
+        }
         const url = new URL(params.endpoint, baseUrl);
         const response = await fetch(url, {
             method: params.method || 'GET',

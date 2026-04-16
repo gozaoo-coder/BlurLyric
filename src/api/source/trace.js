@@ -18,6 +18,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { sourceManager } from './index.js';
 
 /**
  * 数据类型枚举
@@ -302,12 +303,18 @@ export class Trace {
      * @returns {Promise<{objectURL: string, destroyObjectURL: Function, data: ArrayBuffer, format: string}>}
      */
     async fetchViaApi(endpoint, params) {
+        if (!this.baseUrl) {
+            throw new Error('Base URL is required for API request');
+        }
         const url = new URL(endpoint, this.baseUrl);
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(params)
         });
+        if (!response.ok) {
+            throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        }
         const arrayBuffer = await response.arrayBuffer();
         const blob = new Blob([arrayBuffer]);
         const objectURL = URL.createObjectURL(blob);
@@ -325,7 +332,6 @@ export class Trace {
      * @returns {Promise<Object>}
      */
     async navigateToSource() {
-        const { sourceManager } = await import('./index.js');
         const source = sourceManager.getSource(this.sourceId);
 
         if (!source) {

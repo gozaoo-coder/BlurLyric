@@ -32,42 +32,67 @@ const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
  * @returns {Promise<any>}
  */
 async function proxyFetch(url, options = {}) {
-    if (!isTauri) {
-        // 非 Tauri 环境，使用原生 fetch（开发调试用）
-        const response = await fetch(url, {
-            headers: {
-                'Content-Type': 'application/json',
-                ...options.headers
-            },
-            ...options
-        });
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
+    if (!url) {
+        throw new Error('URL is required');
     }
 
-    // Tauri 环境，通过 IPC 代理请求
-    const request = {
-        url,
-        method: options.method || 'GET',
-        headers: options.headers || {},
-        body: options.body || null,
-        timeout: options.timeout || 30000
-    };
+    const timeout = options.timeout || 30000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-    const response = await invoke('http_request', { request });
-    
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    // 尝试解析 JSON
     try {
-        return JSON.parse(response.body);
-    } catch {
-        // 如果不是 JSON，返回原始文本
-        return response.body;
+        if (!isTauri) {
+            // 非 Tauri 环境，使用原生 fetch（开发调试用）
+            const response = await fetch(url, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                },
+                signal: controller.signal,
+                ...options
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}, url: ${url}`);
+            }
+            
+            try {
+                return await response.json();
+            } catch {
+                // 如果不是 JSON，返回原始文本
+                return await response.text();
+            }
+        }
+
+        // Tauri 环境，通过 IPC 代理请求
+        const request = {
+            url,
+            method: options.method || 'GET',
+            headers: options.headers || {},
+            body: options.body || null,
+            timeout
+        };
+
+        const response = await invoke('http_request', { request });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}, url: ${url}`);
+        }
+
+        // 尝试解析 JSON
+        try {
+            return JSON.parse(response.body);
+        } catch {
+            // 如果不是 JSON，返回原始文本
+            return response.body;
+        }
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            throw new Error(`Request timeout after ${timeout}ms: ${url}`);
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
     }
 }
 
@@ -79,8 +104,7 @@ export class ApiSource extends Source {
      * @param {Object} [config] - 额外配置
      */
     constructor(sourceId, sourceName, baseUrl, config = {}) {
-        super(sourceId, sourceName, 'api', SOURCE_TYPE.API);
-        this.baseUrl = baseUrl;
+        super(sourceId, sourceName, 'api', SOURCE_TYPE.API, baseUrl);
         this.config = config;
         this.cache = new Map();
         this.cacheExpiry = new Map();
@@ -402,9 +426,14 @@ export class ApiSource extends Source {
 
     async isAvailable() {
         try {
-            await this._fetch('/');
-            return true;
-        } catch {
+            // 使用较短的超时时间，避免长时间阻塞
+            const result = await this._fetch('/', {
+                timeout: 5000 // 5 秒超时
+            });
+            // 检查返回结果是否有效
+            return result !== null && result !== undefined;
+        } catch (error) {
+            console.debug('API source availability check failed:', error.message);
             return false;
         }
     }

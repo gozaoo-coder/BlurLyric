@@ -30,12 +30,14 @@ export class Source {
      * @param {string} sourceName - 数据源显示名称
      * @param {string} type - 具体类型 (tauri/webdav/api)
      * @param {string} sourceType - STORAGE 或 API
+     * @param {string} [baseUrl] - API 基础地址（API 型数据源需要）
      */
-    constructor(sourceId, sourceName, type, sourceType) {
+    constructor(sourceId, sourceName, type, sourceType, baseUrl = '') {
         this.sourceId = sourceId;       // 数据源唯一标识（用户自定义）
         this.sourceName = sourceName;   // 数据源显示名称
         this.type = type;               // 具体类型 (tauri/webdav/api)
         this.sourceType = sourceType;   // STORAGE 或 API
+        this.baseUrl = baseUrl;         // API 基础地址
         this.enabled = true;
     }
 

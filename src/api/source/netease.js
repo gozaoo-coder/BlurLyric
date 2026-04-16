@@ -322,14 +322,23 @@ export class NeteaseSource extends ApiSource {
      * @returns {Promise<{url: string, format: string, bitrate: number, size: number, expiresAt: number}>}
      */
     async getTrackResourceUrl(trackId, options = {}) {
+        if (!trackId) {
+            throw new Error('Track ID is required');
+        }
+
         const actualId = this.extractOriginalId(trackId);
         const bitrate = options.bitrate || this.defaultBitrate;
 
         try {
+            // 尝试获取指定音质
             const result = await this._fetch(`/song/url?id=${actualId}&br=${bitrate}`);
             const data = result?.data?.[0];
 
-            if (!data?.url) {
+            if (!data) {
+                throw new Error('Invalid response from API');
+            }
+
+            if (!data.url) {
                 // 尝试获取无损音质
                 if (this.enableFlac && bitrate !== 999000) {
                     const flacResult = await this._fetch(`/song/url?id=${actualId}&br=999000`);
@@ -344,6 +353,10 @@ export class NeteaseSource extends ApiSource {
                         };
                     }
                 }
+                // 检查是否有错误信息
+                if (data.code) {
+                    throw new Error(`API error: ${data.code} - ${data.message || 'Music file URL not available'}`);
+                }
                 throw new Error('Music file URL not available');
             }
 
@@ -355,7 +368,7 @@ export class NeteaseSource extends ApiSource {
                 expiresAt: Date.now() + 3600000
             };
         } catch (e) {
-            console.error('Failed to get track resource URL:', e);
+            console.error(`Failed to get track resource URL for ${trackId}:`, e);
             throw e;
         }
     }
@@ -367,15 +380,24 @@ export class NeteaseSource extends ApiSource {
      * @returns {Promise<string>}
      */
     async getCoverUrl(coverId, size = 368) {
-        if (coverId?.startsWith('http')) {
+        if (!coverId) {
+            return '';
+        }
+
+        if (coverId.startsWith('http')) {
             // 网易云图片 URL 添加尺寸参数
             if (coverId.includes('127.0.0.1') || coverId.includes('localhost')) {
                 return coverId;
             }
-            return `${coverId}?param=${size}y${size}`;
+            // 确保 URL 已经包含协议
+            const url = new URL(coverId);
+            url.searchParams.set('param', `${size}y${size}`);
+            return url.toString();
         }
 
-        return `${this.baseUrl}/cover?id=${coverId}&size=${size}`;
+        // 对于图片 ID，返回标准的网易云图片 URL 格式
+        // 注意：实际使用中，网易云 API 返回的通常是完整 URL
+        return `https://p2.music.126.net/${coverId}/cover.jpg?param=${size}y${size}`;
     }
 
     /**
