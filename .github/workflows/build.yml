@@ -18,7 +18,7 @@ jobs:
       matrix:
         include:
           - platform: 'macos-latest'
-            args: '--target universal-apple-darwin'
+            args: ''
           - platform: 'ubuntu-22.04'
             args: ''
           - platform: 'windows-latest'
@@ -75,8 +75,8 @@ jobs:
         with:
           name: macos-build
           path: |
-            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app
 
       - name: Upload artifacts (Linux)
         if: matrix.platform == 'ubuntu-22.04'
@@ -99,6 +99,12 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -118,9 +124,9 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          api-level: 34
-          ndk-version: 26.1.10909125
-          cmake-version: 3.22.1
+          cmdline-tools-version: '11076708'
+          packages: 'platform-tools;platforms;android-34;ndk;26.1.10909125;cmake;3.22.1'
+          accept-android-sdk-licenses: 'true'
 
       - name: Build Tauri Android app
         run: |
