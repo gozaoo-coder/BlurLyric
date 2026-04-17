@@ -4,10 +4,10 @@
 
 use crate::trace::{Trace, TraceDataType, ResourceInfo};
 use crate::music_tag::MetadataParser;
-use crate::performance_monitor::{PerformanceMonitor, MetricType};
-use crate::music_library_cache::MusicLibraryCacheData;
+use crate::monitoring::performance_monitor::{PerformanceMonitor, MetricType};
+use crate::cache::music_library_cache::MusicLibraryCacheData;
 use crate::LibraryCacheManager;
-use crate::incremental_scanner::IncrementalScanner;
+use crate::scanner::incremental_scanner::IncrementalScanner;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::{info, warn, error};

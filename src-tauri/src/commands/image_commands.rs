@@ -4,8 +4,8 @@
 
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use crate::music_tag::MetadataParser;
-use crate::image_processor::IMAGE_PROCESSOR;
-use crate::performance_monitor::{PerformanceMonitor, MetricType};
+use crate::image::image_processor::IMAGE_PROCESSOR;
+use crate::monitoring::performance_monitor::{PerformanceMonitor, MetricType};
 use std::path::PathBuf;
 use std::fs;
 use tokio::fs as async_fs;

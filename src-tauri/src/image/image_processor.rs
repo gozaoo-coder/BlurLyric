@@ -10,7 +10,7 @@ use tokio::sync::Semaphore;
 use std::time::Instant;
 
 // 引入GPU图像处理器
-use crate::gpu_image_processor::{init_gpu_processor, resize_with_gpu_fallback, resize_with_gpu_fallback_async};
+use crate::image::gpu_image_processor::{init_gpu_processor, resize_with_gpu_fallback, resize_with_gpu_fallback_async};
 
 // 图片处理配置
 pub struct ImageProcessorConfig {
