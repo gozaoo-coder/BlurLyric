@@ -128,11 +128,19 @@ jobs:
           packages: 'platform-tools;platforms;android-34;ndk;26.1.10909125;cmake;3.22.1'
           accept-android-sdk-licenses: 'true'
 
+      - name: Set Android environment variables
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+          echo "PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_ENV
+
       - name: Build Tauri Android app
         run: |
-          export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
-          export NDK_HOME=${ANDROID_HOME}/ndk/26.1.10909125
-          export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
+          echo "ANDROID_HOME: $ANDROID_HOME"
+          echo "NDK_HOME: $NDK_HOME"
+          echo "PATH: $PATH"
+          ls -la $ANDROID_HOME || true
+          ls -la $ANDROID_HOME/ndk/ || true
           npx @tauri-apps/cli android build
 
       - name: Upload Android artifacts

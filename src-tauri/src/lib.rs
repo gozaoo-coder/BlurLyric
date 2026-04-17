@@ -33,8 +33,14 @@ pub fn run() {
     let _ = LibraryCacheManager::init();
     let _ = ResourceCacheManager::init();
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
+    let mut builder = tauri::Builder::default();
+    
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        builder = builder.plugin(tauri_plugin_shell::init());
+    }
+    
+    builder
         .invoke_handler(tauri::generate_handler![
             commands::music_commands::get_music_list,
             commands::music_commands::get_all_my_albums,
