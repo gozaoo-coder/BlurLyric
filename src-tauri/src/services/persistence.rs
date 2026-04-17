@@ -14,16 +14,17 @@ use crate::state::*;
 use crate::models::legacy::{Song, Artist, Album, TrackSourceInfo};
 use crate::models::Track;
 use crate::common::utils;
-use crate::music_library_cache::{
+use crate::cache::{
     MusicLibraryCacheData,
     CachedArtist,
     CachedAlbum,
     CachedSongMetadata,
     FileFingerprint,
-    MusicLibraryCache as LibraryCacheManager
+    MusicLibraryCache as LibraryCacheManager,
+    MusicLibraryCache
 };
-use crate::incremental_scanner::{IncrementalScanner};
-use crate::performance_monitor::{PerformanceMonitor, MetricType};
+use crate::scanner::incremental_scanner::{IncrementalScanner, ScanResult};
+use crate::monitoring::performance_monitor::{PerformanceMonitor, MetricType};
 use crate::trace::{Trace, TraceDataType, ResourceInfo};
 use super::scanner::{scan_music_files, parse_music_file, cache_music_list};
 
@@ -89,7 +90,8 @@ pub fn init_application() {
 /// - `false`: 缓存不存在或无效
 pub fn load_from_persistent_cache() -> bool {
     if let Some(manager_guard) = LibraryCacheManager::instance() {
-        if let Some(manager) = manager_guard.as_ref() {
+        if let Some(manager) = &*manager_guard {
+            let manager: &MusicLibraryCache = manager;
             match manager.load_from_disk() {
                 Ok(cache) => {
                     if cache.songs.is_empty() {
@@ -174,8 +176,9 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
         let mut dir_songs: HashMap<PathBuf, Vec<Song>> = HashMap::new();
         
         for cached_song in &cache.songs {
-            let dir = cached_song.fingerprint.path.parent()
-                .map(|p| p.to_path_buf())
+            let cached_song: &CachedSongMetadata = cached_song;
+            let dir: PathBuf = cached_song.fingerprint.path.parent()
+                .map(|p: &std::path::Path| p.to_path_buf())
                 .unwrap_or_default();
             
             // 查找艺术家和专辑
@@ -195,7 +198,7 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
                 });
             
             // 从缓存的来源信息构建sources
-            let mut sources = Vec::new();
+            let mut sources: Vec<TrackSourceInfo> = Vec::new();
             
             // 主来源
             if let Some(ref primary) = cached_song.primary_source {
@@ -211,8 +214,8 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
                 });
             } else {
                 // 如果没有主来源，从fingerprint构建
-                let format = cached_song.fingerprint.path.extension()
-                    .and_then(|e| e.to_str())
+                let format: String = cached_song.fingerprint.path.extension()
+                    .and_then(|e: &std::ffi::OsStr| e.to_str())
                     .unwrap_or("unknown")
                     .to_string();
                 
@@ -314,16 +317,21 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
 /// 将当前内存中的数据构建为持久化格式并保存到磁盘。
 pub fn save_to_persistent_cache() {
     if let Some(manager_guard) = LibraryCacheManager::instance() {
-        if let Some(manager) = manager_guard.as_ref() {
+        // 直接获取内部的 Option<MusicLibraryCache>
+        if let Some(manager) = &*manager_guard {
+            let manager: &MusicLibraryCache = manager;
             // 从内存缓存构建持久化缓存
             let cache = build_persistent_cache_from_memory();
             
             if let Err(e) = manager.save_to_disk(&cache) {
                 error!(error = %e, "Failed to save to persistent cache");
             } else {
+                // 在同一个锁作用域内更新内存缓存
                 manager.update_memory_cache(cache);
                 info!("Saved to persistent cache successfully");
             }
+        } else {
+            error!("Music library cache manager not initialized");
         }
     }
 }
@@ -340,7 +348,7 @@ pub fn save_to_persistent_cache() {
 /// # 返回值
 /// 构建好的 MusicLibraryCacheData 对象
 pub fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
-    use crate::music_library_cache::{CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint};
+    use crate::cache::{CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint};
     let now = utils::current_timestamp();
     let mut cache = MusicLibraryCacheData::new();
 
@@ -373,6 +381,7 @@ pub fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
         let music_cache = MUSIC_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         for (_, songs) in music_cache.iter() {
             for song in songs {
+                let song: &Song = song;
                 let fingerprint = match FileFingerprint::from_path(&song.src) {
                     Ok(fp) => fp,
                     Err(_) => continue,
@@ -443,14 +452,16 @@ pub fn perform_background_incremental_scan() {
         // 执行增量扫描
         let music_dirs = get_music_dirs();
         
-        let existing_cache = if let Some(manager_guard) = LibraryCacheManager::instance() {
-            if let Some(manager) = manager_guard.as_ref() {
-                manager.load_from_disk().unwrap_or_else(|_| MusicLibraryCacheData::new())
-            } else {
-                MusicLibraryCacheData::new()
-            }
-        } else {
-            MusicLibraryCacheData::new()
+        let existing_cache: MusicLibraryCacheData = match LibraryCacheManager::instance() {
+            Some(manager_guard) => match &*manager_guard {
+                Some(manager) => {
+                    let manager: &MusicLibraryCache = manager;
+                    let result: Result<MusicLibraryCacheData, String> = manager.load_from_disk();
+                    result.unwrap_or_else(|_| MusicLibraryCacheData::new())
+                }
+                None => MusicLibraryCacheData::new(),
+            },
+            None => MusicLibraryCacheData::new(),
         };
         
         let max_song_id = existing_cache.songs.iter().map(|s| s.id).max().unwrap_or(0);
@@ -461,27 +472,40 @@ pub fn perform_background_incremental_scan() {
         
         match scanner.scan_incremental(&music_dirs, &existing_cache) {
             Ok(scan_result) => {
-                if scan_result.total_changes() > 0 {
-                    info!(changes = scan_result.total_changes(), "Background scan found changes, updating cache");
+                let scan_result: ScanResult = scan_result;
+                let changes = scan_result.total_changes();
+                if changes > 0 {
+                    info!(changes = changes, "Background scan found changes, updating cache");
                     
-                    let new_cache = crate::incremental_scanner::build_cache_from_scan(
+                    let new_cache = crate::scanner::build_cache_from_scan(
                         scan_result, 
                         Some(&existing_cache)
                     );
                     
                     // 保存新缓存
                     if let Some(manager_guard) = LibraryCacheManager::instance() {
-                        if let Some(manager) = manager_guard.as_ref() {
+                        if let Some(manager) = &*manager_guard {
+                            let manager: &MusicLibraryCache = manager;
                             let _ = manager.save_to_disk(&new_cache);
-                            manager.update_memory_cache(new_cache);
+                            if let Some(mut manager_guard) = LibraryCacheManager::instance() {
+                                if let Some(ref mut manager) = *manager_guard {
+                                    let manager: &mut MusicLibraryCache = manager;
+                                    manager.update_memory_cache(new_cache);
+                                }
+                            }
                         }
                     }
                     
                     // 更新内存缓存
-                    rebuild_memory_cache_from_persistent(
-                        &LibraryCacheManager::instance().unwrap().as_ref().unwrap()
-                            .load_from_disk().unwrap()
-                    );
+                    if let Some(manager_guard) = LibraryCacheManager::instance() {
+                        if let Some(manager) = &*manager_guard {
+                            let manager: &MusicLibraryCache = manager;
+                            let result: Result<MusicLibraryCacheData, String> = manager.load_from_disk();
+                            if let Ok(cache) = result {
+                                rebuild_memory_cache_from_persistent(&cache);
+                            }
+                        }
+                    }
                 } else {
                     info!("No changes detected in background scan");
                 }

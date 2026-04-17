@@ -25,7 +25,7 @@ pub use crate::trace::{Trace, TraceDataType, SourceType, StorageType, FetchMetho
 // ==================== 转换 Trait 实现 ====================
 // 第一阶段：纯后端安全改动，提供类型转换能力
 
-use crate::music_library_cache::CachedSongMetadata;
+use crate::cache::CachedSongMetadata;
 // 注意：Trace, TraceDataType, ResourceInfo 已通过上面的 pub use 导入，无需重复导入
 use std::path::PathBuf;
 

@@ -5,7 +5,7 @@
  * 大幅提升启动速度和后续更新速度
  */
 
-use crate::music_library_cache::{MusicLibraryCache as LibraryCacheManager, CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint, MusicLibraryCacheData};
+use crate::cache::{MusicLibraryCache as LibraryCacheManager, CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint, MusicLibraryCacheData, TrackSource};
 use crate::music_tag::MetadataParser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

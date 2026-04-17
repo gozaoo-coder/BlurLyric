@@ -4,10 +4,10 @@
 
 use crate::trace::{Trace, TraceDataType, ResourceInfo};
 use crate::music_tag::MetadataParser;
-use crate::monitoring::performance_monitor::{PerformanceMonitor, MetricType};
-use crate::cache::music_library_cache::MusicLibraryCacheData;
-use crate::LibraryCacheManager;
-use crate::scanner::incremental_scanner::IncrementalScanner;
+use crate::monitoring::{PerformanceMonitor, MetricType};
+use crate::cache::MusicLibraryCacheData;
+use crate::cache::MusicLibraryCache as LibraryCacheManager;
+use crate::scanner::{IncrementalScanner, ScanResult};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::{info, warn, error};
@@ -159,7 +159,7 @@ pub fn init_application() {
     }
 
     // 2. 初始化资源缓存管理器
-    use crate::resource_cache::ResourceCacheManager;
+    use crate::cache::ResourceCacheManager;
     if let Err(e) = ResourceCacheManager::init() {
         error!(error = %e, "Failed to initialize resource cache");
     }
@@ -757,7 +757,7 @@ fn save_to_persistent_cache() {
 
 /// 从内存缓存构建持久化缓存
 fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
-    use crate::music_library_cache::{CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint};
+    use crate::cache::{CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint};
     use crate::common::utils;
     let now = utils::current_timestamp();
     let mut cache = MusicLibraryCacheData::new();
@@ -874,7 +874,7 @@ fn perform_background_incremental_scan() {
                 if scan_result.total_changes() > 0 {
                     info!(changes = scan_result.total_changes(), "Background scan found changes, updating cache");
 
-                    let new_cache = crate::incremental_scanner::build_cache_from_scan(
+                    let new_cache = crate::scanner::build_cache_from_scan(
                         scan_result,
                         Some(&existing_cache)
                     );
