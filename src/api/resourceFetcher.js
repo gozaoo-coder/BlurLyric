@@ -82,16 +82,26 @@ export class ResourceFetcher {
             return await this.#fetchRemoteResource(traceObj, true);
         }
 
-        // 3. 检查缓存
-        const cachedPath = await this.#resourceCache.getCachedPath(traceObj);
-        if (cachedPath) {
-            return await this.#getCachedResource(cachedPath, traceObj);
-        }
-
-        // 4. 检查是否有正在进行的请求（避免重复下载）
         const cacheKey = this.#getCacheKey(traceObj);
+
+        // 3. 检查是否有正在进行的请求（避免重复下载）
         if (this.#pendingRequests.has(cacheKey)) {
             return await this.#pendingRequests.get(cacheKey);
+        }
+
+        // 4. 检查缓存
+        let cachedPath = null;
+        try {
+            const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+            if (isTauri) {
+                cachedPath = await this.#resourceCache.getCachedPath(traceObj);
+            }
+        } catch (error) {
+            console.warn('Failed to check cache, falling back to remote:', error);
+        }
+        
+        if (cachedPath) {
+            return await this.#getCachedResource(cachedPath, traceObj);
         }
 
         // 5. 获取远程资源并缓存
@@ -119,7 +129,16 @@ export class ResourceFetcher {
             return true;
         }
         
-        return await this.#resourceCache.isCached(traceObj);
+        try {
+            const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+            if (!isTauri) {
+                return false;
+            }
+            return await this.#resourceCache.isCached(traceObj);
+        } catch (error) {
+            console.warn('Failed to check cache status:', error);
+            return false;
+        }
     }
 
     /**
@@ -138,7 +157,16 @@ export class ResourceFetcher {
             return null;
         }
         
-        return await this.#resourceCache.getCachedPath(traceObj);
+        try {
+            const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+            if (!isTauri) {
+                return null;
+            }
+            return await this.#resourceCache.getCachedPath(traceObj);
+        } catch (error) {
+            console.warn('Failed to get cached path:', error);
+            return null;
+        }
     }
 
     /**
@@ -202,7 +230,8 @@ export class ResourceFetcher {
             }
         };
 
-        await Promise.all([...active, processNext()]);
+        await processNext();
+        await Promise.all(active);
         return results;
     }
 
@@ -248,17 +277,26 @@ export class ResourceFetcher {
      * @returns {Promise<FetchResult>}
      */
     async #getCachedResource(cachedPath, trace) {
-        // 通过 Tauri 后端读取缓存文件
-        const result = await invoke('read_cached_file', { path: cachedPath });
-        const blob = new Blob([result]);
-        const objectURL = URL.createObjectURL(blob);
-        
-        return {
-            objectURL,
-            destroyObjectURL: () => URL.revokeObjectURL(objectURL),
-            fromCache: true,
-            cacheId: await this.#resourceCache.isCached(trace) ? this.#getCacheId(trace) : null
-        };
+        try {
+            const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+            if (!isTauri) {
+                throw new Error('Not in Tauri environment');
+            }
+            
+            const result = await invoke('read_cached_file', { path: cachedPath });
+            const blob = new Blob([result]);
+            const objectURL = URL.createObjectURL(blob);
+            
+            return {
+                objectURL,
+                destroyObjectURL: () => URL.revokeObjectURL(objectURL),
+                fromCache: true,
+                cacheId: this.#getCacheId(trace)
+            };
+        } catch (error) {
+            console.warn('Failed to get cached resource, falling back to remote:', error);
+            return await this.#fetchRemoteResource(trace, false);
+        }
     }
 
     /**
@@ -274,6 +312,9 @@ export class ResourceFetcher {
 
         switch (fetchMethod.type) {
             case FetchMethodType.DOWNLOAD:
+                if (!fetchMethod.params.url) {
+                    throw new Error('Download URL is required');
+                }
                 resourceData = await this.#downloadFromUrl(fetchMethod.params.url);
                 format = fetchMethod.params.format || this.#detectFormat(fetchMethod.params.url);
                 break;
@@ -285,6 +326,9 @@ export class ResourceFetcher {
 
             case FetchMethodType.STREAM:
                 // 流式资源直接返回 URL，不缓存
+                if (!fetchMethod.params.url) {
+                    throw new Error('Stream URL is required');
+                }
                 return {
                     objectURL: fetchMethod.params.url,
                     destroyObjectURL: () => {},
@@ -300,7 +344,10 @@ export class ResourceFetcher {
         let cacheId = null;
         if (shouldCache && resourceData) {
             try {
-                cacheId = await this.#resourceCache.cacheResource(trace, resourceData, format);
+                const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+                if (isTauri) {
+                    cacheId = await this.#resourceCache.cacheResource(trace, resourceData, format);
+                }
             } catch (error) {
                 console.warn('Failed to cache resource:', error);
             }
@@ -319,12 +366,34 @@ export class ResourceFetcher {
     }
 
     /**
+     * 带超时的 fetch 请求
+     * @param {string|URL} url - 请求 URL
+     * @param {Object} options - fetch 选项
+     * @param {number} timeout - 超时时间（毫秒），默认 30 秒
+     * @returns {Promise<Response>}
+     */
+    async #fetchWithTimeout(url, options = {}, timeout = 30000) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        
+        try {
+            const response = await fetch(url, {
+                ...options,
+                signal: controller.signal
+            });
+            return response;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
+    /**
      * 从 URL 下载资源
      * @param {string} url - 资源 URL
      * @returns {Promise<ArrayBuffer>}
      */
     async #downloadFromUrl(url) {
-        const response = await fetch(url);
+        const response = await this.#fetchWithTimeout(url);
         if (!response.ok) {
             throw new Error(`Failed to download resource: ${response.status} ${response.statusText}`);
         }
@@ -342,11 +411,18 @@ export class ResourceFetcher {
             throw new Error('Base URL is required for API request');
         }
         const url = new URL(params.endpoint, baseUrl);
-        const response = await fetch(url, {
-            method: params.method || 'GET',
-            headers: params.headers || { 'Content-Type': 'application/json' },
-            body: params.body ? JSON.stringify(params.body) : undefined
-        });
+        const method = (params.method || 'GET').toUpperCase();
+        const fetchOptions = {
+            method,
+            headers: params.headers || { 'Content-Type': 'application/json' }
+        };
+        
+        // 只在需要时添加 body
+        if (params.body && method !== 'GET' && method !== 'HEAD') {
+            fetchOptions.body = JSON.stringify(params.body);
+        }
+
+        const response = await this.#fetchWithTimeout(url, fetchOptions);
 
         if (!response.ok) {
             throw new Error(`API request failed: ${response.status} ${response.statusText}`);

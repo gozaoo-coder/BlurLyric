@@ -158,6 +158,24 @@ export class ApiSource extends Source {
     // ========== Trace 创建 ==========
 
     /**
+     * 创建 API 来源 Trace
+     * @param {string} dataType - 数据类型 (TraceDataType)
+     * @param {string} dataId - 数据 ID
+     * @param {Object} fetchMethod - 获取方法配置
+     * @returns {Trace}
+     */
+    createApiTrace(dataType, dataId, fetchMethod) {
+        return Trace.createApiSource(
+            this.sourceId,
+            this.sourceName,
+            this.baseUrl,
+            dataType,
+            dataId,
+            fetchMethod
+        );
+    }
+
+    /**
      * 创建歌曲 Trace
      * @param {string} trackId - 歌曲 ID
      * @param {Object} metadata - 歌曲元数据
@@ -177,45 +195,7 @@ export class ApiSource extends Source {
         );
     }
 
-    /**
-     * 创建专辑 Trace
-     * @param {string} albumId - 专辑 ID
-     * @param {Object} metadata - 专辑元数据
-     * @returns {Trace}
-     */
-    createAlbumTrace(albumId, metadata = {}) {
-        return this.createApiTrace(
-            TraceDataType.ALBUM,
-            albumId,
-            {
-                type: FetchMethodType.API_CALL,
-                params: {
-                    endpoint: `/album/${albumId}`,
-                    params: {}
-                }
-            }
-        );
-    }
 
-    /**
-     * 创建艺术家 Trace
-     * @param {string} artistId - 艺术家 ID
-     * @param {Object} metadata - 艺术家元数据
-     * @returns {Trace}
-     */
-    createArtistTrace(artistId, metadata = {}) {
-        return this.createApiTrace(
-            TraceDataType.ARTIST,
-            artistId,
-            {
-                type: FetchMethodType.API_CALL,
-                params: {
-                    endpoint: `/artist/${artistId}`,
-                    params: {}
-                }
-            }
-        );
-    }
 
     // ========== 搜索功能 ==========
 

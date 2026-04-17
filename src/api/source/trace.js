@@ -221,20 +221,28 @@ export class Trace {
      */
     async #tryGetFromCache() {
         try {
+            const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+            if (!isTauri) {
+                console.warn('Not in Tauri environment, skipping cache check');
+                return null;
+            }
+
             const cachedPath = await invoke('get_cached_resource_path', {
                 trace: this.toRaw()
-            });
+            }).catch(() => null);
 
             if (cachedPath) {
-                const result = await invoke('read_cached_file', { path: cachedPath });
-                const blob = new Blob([result]);
-                const objectURL = URL.createObjectURL(blob);
+                const result = await invoke('read_cached_file', { path: cachedPath }).catch(() => null);
+                if (result) {
+                    const blob = new Blob([result]);
+                    const objectURL = URL.createObjectURL(blob);
 
-                return {
-                    objectURL,
-                    destroyObjectURL: () => URL.revokeObjectURL(objectURL),
-                    fromCache: true
-                };
+                    return {
+                        objectURL,
+                        destroyObjectURL: () => URL.revokeObjectURL(objectURL),
+                        fromCache: true
+                    };
+                }
             }
         } catch (error) {
             console.warn('Failed to get cached resource:', error);
@@ -250,11 +258,19 @@ export class Trace {
      */
     async #storeInCache(data, format) {
         try {
+            const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__;
+            if (!isTauri) {
+                console.warn('Not in Tauri environment, skipping cache storage');
+                return;
+            }
+
             const dataArray = Array.from(new Uint8Array(data));
             await invoke('cache_resource', {
                 trace: this.toRaw(),
                 data: dataArray,
                 format
+            }).catch((error) => {
+                console.warn('Failed to cache resource:', error);
             });
         } catch (error) {
             console.warn('Failed to cache resource:', error);
@@ -284,16 +300,37 @@ export class Trace {
      * @returns {Promise<{objectURL: string, destroyObjectURL: Function, data: ArrayBuffer, format: string}>}
      */
     async downloadResource(url, format) {
-        const response = await fetch(url);
-        const arrayBuffer = await response.arrayBuffer();
-        const blob = new Blob([arrayBuffer]);
-        const objectURL = URL.createObjectURL(blob);
-        return {
-            objectURL,
-            destroyObjectURL: () => URL.revokeObjectURL(objectURL),
-            data: arrayBuffer,
-            format: format || 'mp3'
-        };
+        if (!url) {
+            throw new Error('URL is required for download');
+        }
+        
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+            
+            try {
+                const response = await fetch(url, { signal: controller.signal });
+                if (!response.ok) {
+                    throw new Error(`Failed to download resource: ${response.status} ${response.statusText}`);
+                }
+                const arrayBuffer = await response.arrayBuffer();
+                const blob = new Blob([arrayBuffer]);
+                const objectURL = URL.createObjectURL(blob);
+                return {
+                    objectURL,
+                    destroyObjectURL: () => URL.revokeObjectURL(objectURL),
+                    data: arrayBuffer,
+                    format: format || 'mp3'
+                };
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw new Error('Download timed out after 30 seconds');
+            }
+            throw error;
+        }
     }
 
     /**
@@ -306,24 +343,47 @@ export class Trace {
         if (!this.baseUrl) {
             throw new Error('Base URL is required for API request');
         }
-        const url = new URL(endpoint, this.baseUrl);
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(params)
-        });
-        if (!response.ok) {
-            throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        
+        try {
+            const url = new URL(endpoint, this.baseUrl);
+            const method = (params.method || 'GET').toUpperCase();
+            const fetchOptions = {
+                method,
+                headers: params.headers || { 'Content-Type': 'application/json' }
+            };
+            
+            // 只在需要时添加 body
+            if (params.body && method !== 'GET' && method !== 'HEAD') {
+                fetchOptions.body = JSON.stringify(params.body);
+            }
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+            fetchOptions.signal = controller.signal;
+            
+            try {
+                const response = await fetch(url, fetchOptions);
+                if (!response.ok) {
+                    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+                }
+                const arrayBuffer = await response.arrayBuffer();
+                const blob = new Blob([arrayBuffer]);
+                const objectURL = URL.createObjectURL(blob);
+                return {
+                    objectURL,
+                    destroyObjectURL: () => URL.revokeObjectURL(objectURL),
+                    data: arrayBuffer,
+                    format: params.format || 'mp3'
+                };
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw new Error('API request timed out after 30 seconds');
+            }
+            throw error;
         }
-        const arrayBuffer = await response.arrayBuffer();
-        const blob = new Blob([arrayBuffer]);
-        const objectURL = URL.createObjectURL(blob);
-        return {
-            objectURL,
-            destroyObjectURL: () => URL.revokeObjectURL(objectURL),
-            data: arrayBuffer,
-            format: params.format || 'mp3'
-        };
     }
 
     /**

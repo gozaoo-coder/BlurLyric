@@ -8,7 +8,7 @@
  * 4. 符合接口规范即可接入
  */
 
-import { Trace, TraceDataType, SourceType, FetchMethodType } from './trace.js';
+import { Trace, TraceDataType, SourceType as TraceSourceType, FetchMethodType } from './trace.js';
 
 /**
  * SourceType 常量（兼容旧代码）

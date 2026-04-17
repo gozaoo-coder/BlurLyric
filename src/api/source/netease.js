@@ -323,39 +323,46 @@ export class NeteaseSource extends ApiSource {
      */
     async getTrackResourceUrl(trackId, options = {}) {
         if (!trackId) {
-            throw new Error('Track ID is required');
+            throw new TypeError('Track ID is required');
+        }
+        if (typeof trackId !== 'string' && typeof trackId !== 'number') {
+            throw new TypeError('Track ID must be a string or number');
+        }
+        if (options.bitrate !== undefined && (typeof options.bitrate !== 'number' || options.bitrate <= 0)) {
+            throw new TypeError('Bitrate must be a positive number');
         }
 
         const actualId = this.extractOriginalId(trackId);
         const bitrate = options.bitrate || this.defaultBitrate;
 
         try {
-            // 尝试获取指定音质
             const result = await this._fetch(`/song/url?id=${actualId}&br=${bitrate}`);
             const data = result?.data?.[0];
 
             if (!data) {
-                throw new Error('Invalid response from API');
+                throw new Error('Invalid response from API: no data found');
             }
 
             if (!data.url) {
-                // 尝试获取无损音质
                 if (this.enableFlac && bitrate !== 999000) {
-                    const flacResult = await this._fetch(`/song/url?id=${actualId}&br=999000`);
-                    const flacData = flacResult?.data?.[0];
-                    if (flacData?.url) {
-                        return {
-                            url: flacData.url,
-                            format: flacData.type || 'flac',
-                            bitrate: flacData.br || 999000,
-                            size: flacData.size || 0,
-                            expiresAt: Date.now() + 3600000
-                        };
+                    try {
+                        const flacResult = await this._fetch(`/song/url?id=${actualId}&br=999000`);
+                        const flacData = flacResult?.data?.[0];
+                        if (flacData?.url) {
+                            return {
+                                url: flacData.url,
+                                format: flacData.type || 'flac',
+                                bitrate: flacData.br || 999000,
+                                size: flacData.size || 0,
+                                expiresAt: Date.now() + 3600000
+                            };
+                        }
+                    } catch (flacError) {
+                        console.warn('Failed to get FLAC version, falling back:', flacError);
                     }
                 }
-                // 检查是否有错误信息
                 if (data.code) {
-                    throw new Error(`API error: ${data.code} - ${data.message || 'Music file URL not available'}`);
+                    throw new Error(`API error ${data.code}: ${data.message || 'Music file URL not available'}`);
                 }
                 throw new Error('Music file URL not available');
             }
@@ -383,21 +390,28 @@ export class NeteaseSource extends ApiSource {
         if (!coverId) {
             return '';
         }
+        if (typeof coverId !== 'string') {
+            console.warn('Cover ID must be a string, received:', typeof coverId);
+            return '';
+        }
+        const validSize = typeof size === 'number' && size > 0 ? Math.floor(size) : 368;
 
         if (coverId.startsWith('http')) {
-            // 网易云图片 URL 添加尺寸参数
             if (coverId.includes('127.0.0.1') || coverId.includes('localhost')) {
                 return coverId;
             }
-            // 确保 URL 已经包含协议
-            const url = new URL(coverId);
-            url.searchParams.set('param', `${size}y${size}`);
-            return url.toString();
+            try {
+                const url = new URL(coverId);
+                url.searchParams.set('param', `${validSize}y${validSize}`);
+                return url.toString();
+            } catch (urlError) {
+                console.warn('Invalid URL, returning as-is:', coverId, urlError);
+                return coverId;
+            }
         }
 
-        // 对于图片 ID，返回标准的网易云图片 URL 格式
-        // 注意：实际使用中，网易云 API 返回的通常是完整 URL
-        return `https://p2.music.126.net/${coverId}/cover.jpg?param=${size}y${size}`;
+        const sanitizedCoverId = encodeURIComponent(coverId);
+        return `https://p2.music.126.net/${sanitizedCoverId}/cover.jpg?param=${validSize}y${validSize}`;
     }
 
     /**
@@ -406,6 +420,13 @@ export class NeteaseSource extends ApiSource {
      * @returns {Promise<{lyric: string, tlyric: string}>}
      */
     async getLyric(trackId) {
+        if (!trackId) {
+            throw new TypeError('Track ID is required');
+        }
+        if (typeof trackId !== 'string' && typeof trackId !== 'number') {
+            throw new TypeError('Track ID must be a string or number');
+        }
+
         const actualId = this.extractOriginalId(trackId);
         try {
             const result = await this._fetch(`/lyric?id=${actualId}`);
@@ -426,19 +447,34 @@ export class NeteaseSource extends ApiSource {
      * @returns {Promise<{objectURL: string, destroyObjectURL: Function}>}
      */
     async getAlbumCover(albumId, maxResolution = 368) {
-        const album = await this.getAlbumDetail(albumId);
-        const picUrl = album?.coverUrl || album?.picUrl || '';
+        if (!albumId) {
+            throw new TypeError('Album ID is required');
+        }
+        if (typeof albumId !== 'string' && typeof albumId !== 'number') {
+            throw new TypeError('Album ID must be a string or number');
+        }
+        const validMaxResolution = typeof maxResolution === 'number' && maxResolution > 0 
+            ? Math.floor(maxResolution) 
+            : 368;
 
-        if (!picUrl) {
+        try {
+            const album = await this.getAlbumDetail(albumId);
+            const picUrl = album?.coverUrl || album?.picUrl || '';
+
+            if (!picUrl) {
+                return { objectURL: '', destroyObjectURL: () => { } };
+            }
+
+            const sizedUrl = await this.getCoverUrl(picUrl, validMaxResolution);
+
+            return {
+                objectURL: sizedUrl,
+                destroyObjectURL: () => { }
+            };
+        } catch (e) {
+            console.error('Failed to get album cover:', e);
             return { objectURL: '', destroyObjectURL: () => { } };
         }
-
-        const sizedUrl = await this.getCoverUrl(picUrl, maxResolution);
-
-        return {
-            objectURL: sizedUrl,
-            destroyObjectURL: () => { }
-        };
     }
 
     /**
@@ -447,12 +483,28 @@ export class NeteaseSource extends ApiSource {
      * @returns {Promise<{objectURL: string, destroyObjectURL: Function}>}
      */
     async getMusicFile(songId) {
-        const resourceUrl = await this.getTrackResourceUrl(songId);
+        if (!songId) {
+            throw new TypeError('Song ID is required');
+        }
+        if (typeof songId !== 'string' && typeof songId !== 'number') {
+            throw new TypeError('Song ID must be a string or number');
+        }
 
-        return {
-            objectURL: resourceUrl.url,
-            destroyObjectURL: () => { }
-        };
+        try {
+            const resourceUrl = await this.getTrackResourceUrl(songId);
+
+            if (!resourceUrl || !resourceUrl.url) {
+                throw new Error('Failed to get valid music file URL');
+            }
+
+            return {
+                objectURL: resourceUrl.url,
+                destroyObjectURL: () => { }
+            };
+        } catch (e) {
+            console.error('Failed to get music file:', e);
+            throw e;
+        }
     }
 
     // ========== 数据解析方法 ==========
@@ -482,7 +534,7 @@ export class NeteaseSource extends ApiSource {
             traces: [this.createTrackTrace(originalId, {
                 format: 'mp3',
                 bitrate: song.h?.br || this.defaultBitrate,
-                url: null
+                trackId: originalId
             })]
         };
     }
@@ -599,52 +651,16 @@ export class NeteaseSource extends ApiSource {
             TraceDataType.TRACK,
             trackId,
             {
-                type: FetchMethodType.DOWNLOAD,
-                params: {
-                    url: metadata.url || '',
-                    format: metadata.format || 'mp3'
-                }
-            }
-        );
-    }
-
-    /**
-     * 创建专辑 Trace
-     * @param {string} albumId - 专辑 ID
-     * @returns {Trace}
-     */
-    createAlbumTrace(albumId) {
-        return this.createApiTrace(
-            TraceDataType.ALBUM,
-            albumId,
-            {
                 type: FetchMethodType.API_CALL,
                 params: {
-                    endpoint: `/album?id=${albumId}`,
+                    endpoint: `/song/url?id=${trackId}&br=${metadata.bitrate || this.defaultBitrate}`,
                     params: {}
                 }
             }
         );
     }
 
-    /**
-     * 创建艺术家 Trace
-     * @param {string} artistId - 艺术家 ID
-     * @returns {Trace}
-     */
-    createArtistTrace(artistId) {
-        return this.createApiTrace(
-            TraceDataType.ARTIST,
-            artistId,
-            {
-                type: FetchMethodType.API_CALL,
-                params: {
-                    endpoint: `/artist/detail?id=${artistId}`,
-                    params: {}
-                }
-            }
-        );
-    }
+
 
     /**
      * 检查源是否可用
