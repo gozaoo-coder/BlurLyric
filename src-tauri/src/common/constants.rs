@@ -18,4 +18,3 @@ pub const DURATION_MEDIUM_THRESHOLD_SECS: f64 = 60.0;
 pub const MUSIC_EXTENSIONS: &[&str] = &["mp3", "ogg", "flac", "m4a", "wav", "aac"];
 
 pub const CACHE_DIR_NAME: &str = "com.blurlyric.app";
-pub const RESOURCE_CACHE_SUBDIR: &str = "resource_cache";

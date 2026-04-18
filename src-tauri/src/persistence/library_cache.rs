@@ -15,6 +15,10 @@ impl LibraryCache {
     const CURRENT_VERSION: u32 = 1;
     const CACHE_FILENAME: &str = "library_cache.json";
 
+    pub fn init() -> Result<Self, String> {
+        Ok(Self::new())
+    }
+
     pub fn new() -> Self {
         Self {
             version: Self::CURRENT_VERSION,

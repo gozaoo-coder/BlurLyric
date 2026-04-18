@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use crate::core_v2::events::LibraryEvent;
 use crate::core_v2::merge_strategy::{MergeStrategy, StrictMergeStrategy};
 use crate::core_v2::models::{
-    Song, Album, Artist, Trace, SongID, AlbumID, ArtistID,
+    Song, Album, Artist, Trace, SongID, AlbumID, ArtistID, SourceID,
     SongWithRelations, AlbumWithRelations, ArtistWithRelations, Details
 };
 use tokio::sync::broadcast;
@@ -29,75 +29,87 @@ impl MusicStorageSourceLibraryManager {
     }
 
     pub fn register_song(&mut self, mut song: Song, trace: Trace) {
-        let mut songs = self.songs.write().unwrap();
-        
-        for (existing_id, existing_song) in songs.iter() {
-            if self.merge_strategy.is_same_song(&song, existing_song) {
-                let existing_song = songs.get_mut(existing_id).unwrap();
+        let songs = self.songs.read().unwrap();
+        let matching_id = songs.iter()
+            .find(|(_, existing_song)| self.merge_strategy.is_same_song(&song, existing_song))
+            .map(|(id, _)| id.clone());
+        drop(songs);
+
+        if let Some(existing_id) = matching_id {
+            let mut songs = self.songs.write().unwrap();
+            if let Some(existing_song) = songs.get_mut(&existing_id) {
                 existing_song.traces.push(trace.clone());
                 let _ = self.event_sender.send(LibraryEvent::TraceAdded {
-                    entity_id: existing_id.clone(),
+                    entity_id: existing_id,
                     trace,
                 });
-                return;
             }
+        } else {
+            song.traces.push(trace.clone());
+            let song_id = song.id.clone();
+            let mut songs = self.songs.write().unwrap();
+            songs.insert(song_id.clone(), song);
+            let _ = self.event_sender.send(LibraryEvent::TraceAdded {
+                entity_id: song_id,
+                trace,
+            });
         }
-        
-        song.traces.push(trace.clone());
-        let song_id = song.id.clone();
-        songs.insert(song_id.clone(), song);
-        let _ = self.event_sender.send(LibraryEvent::TraceAdded {
-            entity_id: song_id,
-            trace,
-        });
     }
 
     pub fn register_album(&mut self, mut album: Album, trace: Trace) {
-        let mut albums = self.albums.write().unwrap();
-        
-        for (existing_id, existing_album) in albums.iter() {
-            if self.merge_strategy.is_same_album(&album, existing_album) {
-                let existing_album = albums.get_mut(existing_id).unwrap();
+        let albums = self.albums.read().unwrap();
+        let matching_id = albums.iter()
+            .find(|(_, existing_album)| self.merge_strategy.is_same_album(&album, existing_album))
+            .map(|(id, _)| id.clone());
+        drop(albums);
+
+        if let Some(existing_id) = matching_id {
+            let mut albums = self.albums.write().unwrap();
+            if let Some(existing_album) = albums.get_mut(&existing_id) {
                 existing_album.traces.push(trace.clone());
                 let _ = self.event_sender.send(LibraryEvent::TraceAdded {
-                    entity_id: existing_id.clone(),
+                    entity_id: existing_id,
                     trace,
                 });
-                return;
             }
+        } else {
+            album.traces.push(trace.clone());
+            let album_id = album.id.clone();
+            let mut albums = self.albums.write().unwrap();
+            albums.insert(album_id.clone(), album);
+            let _ = self.event_sender.send(LibraryEvent::TraceAdded {
+                entity_id: album_id,
+                trace,
+            });
         }
-        
-        album.traces.push(trace.clone());
-        let album_id = album.id.clone();
-        albums.insert(album_id.clone(), album);
-        let _ = self.event_sender.send(LibraryEvent::TraceAdded {
-            entity_id: album_id,
-            trace,
-        });
     }
 
     pub fn register_artist(&mut self, mut artist: Artist, trace: Trace) {
-        let mut artists = self.artists.write().unwrap();
-        
-        for (existing_id, existing_artist) in artists.iter() {
-            if self.merge_strategy.is_same_artist(&artist, existing_artist) {
-                let existing_artist = artists.get_mut(existing_id).unwrap();
+        let artists = self.artists.read().unwrap();
+        let matching_id = artists.iter()
+            .find(|(_, existing_artist)| self.merge_strategy.is_same_artist(&artist, existing_artist))
+            .map(|(id, _)| id.clone());
+        drop(artists);
+
+        if let Some(existing_id) = matching_id {
+            let mut artists = self.artists.write().unwrap();
+            if let Some(existing_artist) = artists.get_mut(&existing_id) {
                 existing_artist.traces.push(trace.clone());
                 let _ = self.event_sender.send(LibraryEvent::TraceAdded {
-                    entity_id: existing_id.clone(),
+                    entity_id: existing_id,
                     trace,
                 });
-                return;
             }
+        } else {
+            artist.traces.push(trace.clone());
+            let artist_id = artist.id.clone();
+            let mut artists = self.artists.write().unwrap();
+            artists.insert(artist_id.clone(), artist);
+            let _ = self.event_sender.send(LibraryEvent::TraceAdded {
+                entity_id: artist_id,
+                trace,
+            });
         }
-        
-        artist.traces.push(trace.clone());
-        let artist_id = artist.id.clone();
-        artists.insert(artist_id.clone(), artist);
-        let _ = self.event_sender.send(LibraryEvent::TraceAdded {
-            entity_id: artist_id,
-            trace,
-        });
     }
 
     pub fn update_trace_details(
@@ -142,13 +154,18 @@ impl MusicStorageSourceLibraryManager {
         let mut songs_to_remove = Vec::new();
         for (song_id, song) in songs.iter_mut() {
             let original_len = song.traces.len();
-            song.traces.retain(|t| t.source_id != source_id);
-            for trace in song.traces.iter().filter(|t| t.source_id == source_id) {
+            // 先收集要移除的 trace 以发送事件
+            let removed: Vec<Trace> = song.traces.iter()
+                .filter(|t| t.source_id == source_id)
+                .cloned()
+                .collect();
+            for trace in &removed {
                 let _ = self.event_sender.send(LibraryEvent::TraceRemoved {
                     entity_id: song_id.clone(),
                     trace: trace.clone(),
                 });
             }
+            song.traces.retain(|t| t.source_id != source_id);
             if song.traces.is_empty() && original_len > 0 {
                 songs_to_remove.push(song_id.clone());
             }
@@ -157,6 +174,55 @@ impl MusicStorageSourceLibraryManager {
         for song_id in songs_to_remove {
             songs.remove(&song_id);
             let _ = self.event_sender.send(LibraryEvent::EntityCleanup { entity_id: song_id });
+        }
+
+        // 同样处理 albums 和 artists
+        let mut albums_to_remove = Vec::new();
+        for (album_id, album) in albums.iter_mut() {
+            let original_len = album.traces.len();
+            let removed: Vec<Trace> = album.traces.iter()
+                .filter(|t| t.source_id == source_id)
+                .cloned()
+                .collect();
+            for trace in &removed {
+                let _ = self.event_sender.send(LibraryEvent::TraceRemoved {
+                    entity_id: album_id.clone(),
+                    trace: trace.clone(),
+                });
+            }
+            album.traces.retain(|t| t.source_id != source_id);
+            if album.traces.is_empty() && original_len > 0 {
+                albums_to_remove.push(album_id.clone());
+            }
+        }
+
+        for album_id in albums_to_remove {
+            albums.remove(&album_id);
+            let _ = self.event_sender.send(LibraryEvent::EntityCleanup { entity_id: album_id });
+        }
+
+        let mut artists_to_remove = Vec::new();
+        for (artist_id, artist) in artists.iter_mut() {
+            let original_len = artist.traces.len();
+            let removed: Vec<Trace> = artist.traces.iter()
+                .filter(|t| t.source_id == source_id)
+                .cloned()
+                .collect();
+            for trace in &removed {
+                let _ = self.event_sender.send(LibraryEvent::TraceRemoved {
+                    entity_id: artist_id.clone(),
+                    trace: trace.clone(),
+                });
+            }
+            artist.traces.retain(|t| t.source_id != source_id);
+            if artist.traces.is_empty() && original_len > 0 {
+                artists_to_remove.push(artist_id.clone());
+            }
+        }
+
+        for artist_id in artists_to_remove {
+            artists.remove(&artist_id);
+            let _ = self.event_sender.send(LibraryEvent::EntityCleanup { entity_id: artist_id });
         }
     }
 

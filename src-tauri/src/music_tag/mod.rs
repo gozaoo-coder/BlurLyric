@@ -23,8 +23,8 @@ use std::path::Path;
 /// * `Result<MusicMetadata, MusicTagError>` - 元数据或错误
 ///
 /// # Example
-/// ```rust
-/// use music_tag::read_metadata;
+/// ```rust,ignore
+/// use blurlyric_lib::music_tag::read_metadata;
 ///
 /// let metadata = read_metadata("/path/to/song.mp3")?;
 /// println!("Title: {}", metadata.title);

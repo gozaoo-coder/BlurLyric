@@ -7,27 +7,35 @@ mod commands;
 mod common;
 
 // 新架构模块
-mod core_v2;
-mod library_manager;
-mod source_manager;
-mod favor_system;
-mod persistence;
-mod sources;
+pub mod core_v2;
+pub mod library_manager;
+pub mod source_manager;
+pub mod favor_system;
+pub mod persistence;
+pub mod sources;
 
-use processor::image_processor::IMAGE_PROCESSOR;
 use once_cell::sync::Lazy;
+use std::sync::{Arc, Mutex};
+
+// 全局事件通道
+static EVENT_CHANNEL: Lazy<(tokio::sync::broadcast::Sender<core_v2::events::LibraryEvent>, tokio::sync::broadcast::Receiver<core_v2::events::LibraryEvent>)> = Lazy::new(|| {
+    core_v2::events::create_event_channel()
+});
 
 // 全局单例
 pub static LIBRARY_MANAGER: Lazy<library_manager::music_storage_source_library_manager::MusicStorageSourceLibraryManager> = Lazy::new(|| {
-    library_manager::music_storage_source_library_manager::MusicStorageSourceLibraryManager::new()
+    library_manager::music_storage_source_library_manager::MusicStorageSourceLibraryManager::new(EVENT_CHANNEL.0.clone())
 });
 
 pub static SOURCE_MANAGER: Lazy<source_manager::source_manager::SourceManager> = Lazy::new(|| {
-    source_manager::source_manager::SourceManager::new()
+    let lm = Arc::new(Mutex::new(LIBRARY_MANAGER.clone()));
+    source_manager::source_manager::SourceManager::new(lm)
 });
 
 pub static FAVOR_SYSTEM: Lazy<favor_system::favor_system::FavorSystem> = Lazy::new(|| {
-    favor_system::favor_system::FavorSystem::new()
+    let lm = Arc::new(Mutex::new(LIBRARY_MANAGER.clone()));
+    let receiver = EVENT_CHANNEL.0.subscribe();
+    favor_system::favor_system::FavorSystem::new(lm, receiver)
 });
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
