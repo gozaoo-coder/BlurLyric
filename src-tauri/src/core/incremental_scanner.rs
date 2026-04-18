@@ -1,11 +1,14 @@
 /**
  * Incremental Scanner - 增量扫描模块
- * 
+ *
  * 提供高效的增量扫描功能，只扫描新增或修改的文件
  * 大幅提升启动速度和后续更新速度
  */
-
-use crate::music_library_cache::{MusicLibraryCache as LibraryCacheManager, CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint, MusicLibraryCacheData};
+use crate::cache::music_library_cache::{
+    CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint,
+    MusicLibraryCache as LibraryCacheManager, MusicLibraryCacheData,
+};
+use crate::common::utils;
 use crate::music_tag::MetadataParser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -13,8 +16,7 @@ use std::fs::{self, DirEntry};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
-use crate::common::utils;
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// 扫描结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,7 +40,7 @@ impl ScanResult {
             files_scanned: 0,
         }
     }
-    
+
     pub fn total_changes(&self) -> usize {
         self.added.len() + self.modified.len() + self.removed.len()
     }
@@ -61,7 +63,7 @@ impl IncrementalScanner {
             album_id_counter: AtomicUsize::new(start_album_id as usize),
         }
     }
-    
+
     /// 执行增量扫描
     pub fn scan_incremental(
         &self,
@@ -70,35 +72,39 @@ impl IncrementalScanner {
     ) -> Result<ScanResult, String> {
         let start_time = Instant::now();
         let mut result = ScanResult::new();
-        
+
         // 1. 收集当前所有音乐文件
         let current_files = self.collect_music_files(music_dirs);
         result.files_scanned = current_files.len();
-        
+
         // 2. 确定新增、修改、删除的文件
         let (to_add, to_remove) = existing_cache.get_files_to_update(&current_files);
-        
+
         // 3. 处理删除的文件
         for path in &to_remove {
             let path_str = path.display().to_string();
-            if let Some(song) = existing_cache.songs.iter().find(|s| s.fingerprint.path == *path) {
+            if let Some(song) = existing_cache
+                .songs
+                .iter()
+                .find(|s| s.fingerprint.path == *path)
+            {
                 result.removed.push(song.id);
             }
         }
-        
+
         // 4. 处理需要重新扫描的文件（新增或修改）
         let files_to_scan: Vec<PathBuf> = current_files
             .into_iter()
             .filter(|path| existing_cache.needs_rescan(path))
             .collect();
-        
+
         // 5. 扫描文件并解析元数据
         for file_path in files_to_scan {
             let path_str = file_path.display().to_string();
-            
+
             // 检查是否是修改的文件
             let is_modified = existing_cache.file_fingerprints.contains_key(&path_str);
-            
+
             match self.parse_music_file(&file_path) {
                 Ok(song_metadata) => {
                     if is_modified {
@@ -112,18 +118,24 @@ impl IncrementalScanner {
                 }
             }
         }
-        
+
         // 6. 保留未变更的文件
         for song in &existing_cache.songs {
             let path_str = song.fingerprint.path.display().to_string();
-            if !to_remove.iter().any(|p| p.display().to_string() == path_str) 
-                && !result.modified.iter().any(|s| s.fingerprint.path == song.fingerprint.path) {
+            if !to_remove
+                .iter()
+                .any(|p| p.display().to_string() == path_str)
+                && !result
+                    .modified
+                    .iter()
+                    .any(|s| s.fingerprint.path == song.fingerprint.path)
+            {
                 result.unchanged.push(song.clone());
             }
         }
-        
+
         result.scan_duration_ms = start_time.elapsed().as_millis() as u64;
-        
+
         info!(
             files_scanned = result.files_scanned,
             added = result.added.len(),
@@ -133,19 +145,19 @@ impl IncrementalScanner {
             duration_ms = result.scan_duration_ms,
             "Incremental scan completed"
         );
-        
+
         Ok(result)
     }
-    
+
     /// 执行全量扫描（首次或强制刷新）
     pub fn scan_full(&self, music_dirs: &[PathBuf]) -> Result<ScanResult, String> {
         let start_time = Instant::now();
         let mut result = ScanResult::new();
-        
+
         // 收集所有音乐文件
         let files = self.collect_music_files(music_dirs);
         result.files_scanned = files.len();
-        
+
         // 扫描所有文件
         for file_path in files {
             match self.parse_music_file(&file_path) {
@@ -157,19 +169,19 @@ impl IncrementalScanner {
                 }
             }
         }
-        
+
         result.scan_duration_ms = start_time.elapsed().as_millis() as u64;
-        
+
         info!(
             files_scanned = result.files_scanned,
             added = result.added.len(),
             duration_ms = result.scan_duration_ms,
             "Full scan completed"
         );
-        
+
         Ok(result)
     }
-    
+
     /// 收集所有音乐文件
     fn collect_music_files(&self, dirs: &[PathBuf]) -> Vec<PathBuf> {
         let mut files = Vec::new();
@@ -178,7 +190,7 @@ impl IncrementalScanner {
         }
         files
     }
-    
+
     /// 递归收集音乐文件
     fn collect_files_recursive(&self, dir: &Path, files: &mut Vec<PathBuf>) {
         if let Ok(entries) = fs::read_dir(dir) {
@@ -192,55 +204,59 @@ impl IncrementalScanner {
             }
         }
     }
-    
+
     fn is_music_file(&self, entry: &DirEntry) -> bool {
         utils::is_music_file(entry)
     }
-    
+
     /// 解析音乐文件元数据
     fn parse_music_file(&self, file: &Path) -> Result<CachedSongMetadata, String> {
         // 生成文件指纹
         let fingerprint = FileFingerprint::from_path(file)?;
-        
+
         // 解析元数据
-        let metadata = self.parser.parse(file)
+        let metadata = self
+            .parser
+            .parse(file)
             .map_err(|e| format!("Failed to parse metadata: {}", e))?;
-        
+
         // 获取文件名作为备用标题
         let file_name = file
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("Unknown Title")
             .to_string();
-        
+
         // 提取歌曲信息
         let title = if metadata.title.is_empty() {
             file_name
         } else {
             metadata.title
         };
-        
+
         // 处理艺术家
         let artists: Vec<String> = if metadata.artists.is_empty() {
             vec!["Unknown Artist".to_string()]
         } else {
-            metadata.artists.iter()
+            metadata
+                .artists
+                .iter()
                 .flat_map(|artist| self.split_artist_names(&artist.name))
                 .collect()
         };
-        
+
         // 处理专辑
         let album = if metadata.album.name.is_empty() {
             "Unknown Album".to_string()
         } else {
             metadata.album.name
         };
-        
+
         let track_number = metadata.track_number.unwrap_or(0);
-        
+
         // 生成ID
         let id = self.next_song_id();
-        
+
         Ok(CachedSongMetadata {
             id,
             name: title,
@@ -261,7 +277,7 @@ impl IncrementalScanner {
             lyricist: metadata.lyricist.clone(),
         })
     }
-    
+
     /// 分割艺术家名称
     fn split_artist_names(&self, name: &str) -> Vec<String> {
         name.split(&['/', '&', '\\'][..])
@@ -269,7 +285,7 @@ impl IncrementalScanner {
             .filter(|s| !s.is_empty())
             .collect()
     }
-    
+
     /// 生成下一个歌曲ID
     fn next_song_id(&self) -> u32 {
         self.song_id_counter.fetch_add(1, Ordering::SeqCst) as u32
@@ -282,20 +298,20 @@ pub fn build_cache_from_scan(
     existing_cache: Option<&MusicLibraryCacheData>,
 ) -> MusicLibraryCacheData {
     let mut cache = MusicLibraryCacheData::new();
-    
+
     // 合并所有歌曲
     let mut all_songs = scan_result.unchanged;
     all_songs.extend(scan_result.added);
     all_songs.extend(scan_result.modified);
-    
+
     cache.songs = all_songs;
-    
+
     // 重建艺术家和专辑信息
     let mut artist_map: HashMap<String, CachedArtist> = HashMap::new();
     let mut album_map: HashMap<String, CachedAlbum> = HashMap::new();
     let mut artist_id_counter = 1u32;
     let mut album_id_counter = 1u32;
-    
+
     // 如果有现有缓存，保留ID映射
     if let Some(existing) = existing_cache {
         for artist in &existing.artists {
@@ -307,7 +323,7 @@ pub fn build_cache_from_scan(
             album_id_counter = album_id_counter.max(album.id + 1);
         }
     }
-    
+
     // 为每首歌建立映射关系
     for song in &cache.songs {
         // 更新文件指纹
@@ -315,7 +331,7 @@ pub fn build_cache_from_scan(
             song.fingerprint.path.display().to_string(),
             song.fingerprint.clone(),
         );
-        
+
         // 处理艺术家
         for artist_name in &song.artists {
             let artist = artist_map.entry(artist_name.clone()).or_insert_with(|| {
@@ -327,13 +343,14 @@ pub fn build_cache_from_scan(
                     alias: Vec::new(),
                 }
             });
-            
-            cache.artist_songs_map
+
+            cache
+                .artist_songs_map
                 .entry(artist.id)
                 .or_insert_with(Vec::new)
                 .push(song.id);
         }
-        
+
         // 处理专辑
         let album = album_map.entry(song.album.clone()).or_insert_with(|| {
             let id = album_id_counter;
@@ -344,17 +361,18 @@ pub fn build_cache_from_scan(
                 pic_url: String::new(),
             }
         });
-        
-        cache.album_songs_map
+
+        cache
+            .album_songs_map
             .entry(album.id)
             .or_insert_with(Vec::new)
             .push(song.id);
     }
-    
+
     cache.artists = artist_map.into_values().collect();
     cache.albums = album_map.into_values().collect();
     cache.cached_at = current_timestamp();
-    
+
     cache
 }
 
@@ -393,30 +411,42 @@ impl From<ScanResult> for ScanResultSummary {
 pub fn perform_incremental_scan() -> Result<ScanResultSummary, String> {
     // 获取音乐目录
     let music_dirs = crate::get_music_dirs();
-    
+
     // 获取现有缓存
     let existing_cache = if let Some(manager_guard) = LibraryCacheManager::instance() {
         if let Some(manager) = manager_guard.as_ref() {
-            manager.load_from_disk().unwrap_or_else(|_| MusicLibraryCacheData::new())
+            manager
+                .load_from_disk()
+                .unwrap_or_else(|_| MusicLibraryCacheData::new())
         } else {
             MusicLibraryCacheData::new()
         }
     } else {
         MusicLibraryCacheData::new()
     };
-    
+
     // 确定起始ID
     let max_song_id = existing_cache.songs.iter().map(|s| s.id).max().unwrap_or(0);
-    let max_artist_id = existing_cache.artists.iter().map(|a| a.id).max().unwrap_or(0);
-    let max_album_id = existing_cache.albums.iter().map(|a| a.id).max().unwrap_or(0);
-    
+    let max_artist_id = existing_cache
+        .artists
+        .iter()
+        .map(|a| a.id)
+        .max()
+        .unwrap_or(0);
+    let max_album_id = existing_cache
+        .albums
+        .iter()
+        .map(|a| a.id)
+        .max()
+        .unwrap_or(0);
+
     // 执行增量扫描
     let scanner = IncrementalScanner::new(max_song_id, max_artist_id, max_album_id);
     let scan_result = scanner.scan_incremental(&music_dirs, &existing_cache)?;
-    
+
     // 构建新缓存
     let new_cache = build_cache_from_scan(scan_result.clone(), Some(&existing_cache));
-    
+
     // 保存到磁盘和内存
     if let Some(manager_guard) = LibraryCacheManager::instance() {
         if let Some(manager) = manager_guard.as_ref() {
@@ -424,7 +454,7 @@ pub fn perform_incremental_scan() -> Result<ScanResultSummary, String> {
             manager.update_memory_cache(new_cache);
         }
     }
-    
+
     Ok(scan_result.into())
 }
 
@@ -433,14 +463,14 @@ pub fn perform_incremental_scan() -> Result<ScanResultSummary, String> {
 pub fn perform_full_scan() -> Result<ScanResultSummary, String> {
     // 获取音乐目录
     let music_dirs = crate::get_music_dirs();
-    
+
     // 执行全量扫描
     let scanner = IncrementalScanner::new(0, 0, 0);
     let scan_result = scanner.scan_full(&music_dirs)?;
-    
+
     // 构建新缓存
     let new_cache = build_cache_from_scan(scan_result.clone(), None);
-    
+
     // 保存到磁盘和内存
     if let Some(manager_guard) = LibraryCacheManager::instance() {
         if let Some(manager) = manager_guard.as_ref() {
@@ -448,6 +478,6 @@ pub fn perform_full_scan() -> Result<ScanResultSummary, String> {
             manager.update_memory_cache(new_cache);
         }
     }
-    
+
     Ok(scan_result.into())
 }

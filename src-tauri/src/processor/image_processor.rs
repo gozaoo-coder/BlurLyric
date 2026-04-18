@@ -2,15 +2,16 @@
  * Image Processor Module
  * 提供图片处理功能，支持多线程和GPU加速
  */
-
 use image::{imageops::FilterType, DynamicImage, GenericImageView, ImageFormat};
 use std::io::Cursor;
 use std::sync::Arc;
-use tokio::sync::Semaphore;
 use std::time::Instant;
+use tokio::sync::Semaphore;
 
 // 引入GPU图像处理器
-use crate::gpu_image_processor::{init_gpu_processor, resize_with_gpu_fallback, resize_with_gpu_fallback_async};
+use crate::gpu_image_processor::{
+    init_gpu_processor, resize_with_gpu_fallback, resize_with_gpu_fallback_async,
+};
 
 // 图片处理配置
 pub struct ImageProcessorConfig {
@@ -55,7 +56,7 @@ impl ImageProcessor {
 
     pub fn with_config(config: ImageProcessorConfig) -> Self {
         let semaphore = Arc::new(Semaphore::new(config.max_concurrent_tasks));
-        
+
         // 尝试初始化GPU
         let gpu_initialized = if config.use_gpu {
             match init_gpu_processor() {
@@ -71,7 +72,7 @@ impl ImageProcessor {
         } else {
             false
         };
-        
+
         Self {
             config,
             semaphore,
@@ -220,7 +221,7 @@ impl ImageProcessor {
 
         Ok(encoded)
     }
-    
+
     /// 检查GPU是否可用
     pub fn is_gpu_available(&self) -> bool {
         self.gpu_initialized
@@ -239,12 +240,20 @@ use once_cell::sync::Lazy;
 pub static IMAGE_PROCESSOR: Lazy<ImageProcessor> = Lazy::new(ImageProcessor::new);
 
 /// 便捷函数：处理专辑封面
-pub async fn process_album_cover(cover_data: Vec<u8>, max_resolution: u32) -> Result<Vec<u8>, String> {
-    IMAGE_PROCESSOR.process_album_cover(cover_data, max_resolution).await
+pub async fn process_album_cover(
+    cover_data: Vec<u8>,
+    max_resolution: u32,
+) -> Result<Vec<u8>, String> {
+    IMAGE_PROCESSOR
+        .process_album_cover(cover_data, max_resolution)
+        .await
 }
 
 /// 便捷函数：调整图片大小
-pub async fn resize_image_async(image: DynamicImage, max_resolution: u32) -> Result<DynamicImage, String> {
+pub async fn resize_image_async(
+    image: DynamicImage,
+    max_resolution: u32,
+) -> Result<DynamicImage, String> {
     IMAGE_PROCESSOR.resize_async(image, max_resolution).await
 }
 

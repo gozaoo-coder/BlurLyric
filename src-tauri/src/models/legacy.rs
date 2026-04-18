@@ -4,22 +4,22 @@
 //! 这些结构体使用 pub 可见性以支持跨模块访问
 //!
 //! # Deprecated
-//! 
+//!
 //! **⚠️ 此模块已标记为 deprecated，将在未来版本中移除**
-//! 
+//!
 //! 请使用新的统一数据模型替代：
 //! - `Song` → 使用 [`crate::models::Track`](super::track::Track)
 //! - `Artist` → 使用 [`crate::models::artist::Artist`](super::artist::Artist)
 //! - `Album` → 使用 [`crate::models::album::Album`](super::album::Album)
 //! - `TrackSourceInfo` → 使用 [`crate::models::track::TrackSourceInfo`](super::track::TrackSourceInfo)
-//! 
+//!
 //! 转换方式：使用 `From<Song> for Track` trait 进行类型转换
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
-use crate::trace::Trace;
+use crate::core::trace::Trace;
 use crate::state;
 
 // ==================== Song 相关结构体 ====================
@@ -27,11 +27,14 @@ use crate::state;
 /// 歌曲信息
 ///
 /// # Deprecated
-/// 
+///
 /// ⚠️ **此结构体已废弃，请使用 [`super::track::Track`](super::track::Track) 替代**
-/// 
+///
 /// 可以通过 `Into<Track>` 或 `Track::from(song)` 进行转换
-#[deprecated(since = "3.1.0", note = "Use crate::models::Track instead. Convert using: Track::from(song) or song.into()")]
+#[deprecated(
+    since = "3.1.0",
+    note = "Use crate::models::Track instead. Convert using: Track::from(song) or song.into()"
+)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Song {
     /// 歌曲名称
@@ -69,13 +72,13 @@ pub struct Song {
     pub channels: Option<u8>,
     /// 其他标签信息
     pub other_tags: Option<HashMap<String, String>>,
-    
+
     // ========== 去重合并相关字段（旧格式，向后兼容） ==========
     /// 所有来源（包括主来源和替代来源）
     pub sources: Vec<TrackSourceInfo>,
     /// 主来源在 sources 中的索引
     pub primary_source_index: usize,
-    
+
     // ========== Trace 来源追踪字段（新格式） ==========
     /// 所有来源 Trace
     #[serde(default)]
@@ -89,14 +92,17 @@ impl Song {
     /// 将 Song 结构体转换为 JSON 值
     ///
     /// # Deprecated
-    /// 
+    ///
     /// ⚠️ 此方法已废弃，建议直接使用 `Track::from(song)` 转换后序列化
     ///
     /// 用于向前端传输标准化的歌曲数据格式
-    #[deprecated(since = "3.1.0", note = "Use Track::from(song) instead, then serialize the Track")]
+    #[deprecated(
+        since = "3.1.0",
+        note = "Use Track::from(song) instead, then serialize the Track"
+    )]
     pub fn to_json(&self) -> serde_json::Value {
         use serde_json::{json, Value as JsonValue};
-        
+
         json!({
             "name": self.name,
             "id": self.id,
@@ -154,9 +160,12 @@ impl Song {
 /// 音轨来源信息（简化版，用于前端传输）
 ///
 /// # Deprecated
-/// 
+///
 /// ⚠️ **此结构体已废弃，请使用 [`super::track::TrackSourceInfo`](super::track::TrackSourceInfo) 替代**
-#[deprecated(since = "3.1.0", note = "Use crate::models::track::TrackSourceInfo instead")]
+#[deprecated(
+    since = "3.1.0",
+    note = "Use crate::models::track::TrackSourceInfo instead"
+)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TrackSourceInfo {
     /// 来源唯一标识符
@@ -182,7 +191,7 @@ pub struct TrackSourceInfo {
 /// 艺术家信息
 ///
 /// # Deprecated
-/// 
+///
 /// ⚠️ **此结构体已废弃，请使用 [`super::artist::Artist`](super::artist::Artist) 替代**
 #[deprecated(since = "3.1.0", note = "Use crate::models::artist::Artist instead")]
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -199,7 +208,7 @@ impl Artist {
     /// 获取该艺术家的所有歌曲
     ///
     /// # Deprecated
-    /// 
+    ///
     /// ⚠️ 此方法已废弃，建议使用新的查询 API
     ///
     /// 通过查询全局艺术家-歌曲映射表获取关联的歌曲列表
@@ -208,7 +217,9 @@ impl Artist {
     /// 属于该艺术家的歌曲向量（如果没有则为空向量）
     #[deprecated(since = "3.1.0", note = "Use new artist query API instead")]
     pub fn get_songs(&self) -> Vec<Song> {
-        let map = state::ARTIST_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
+        let map = state::ARTIST_SONGS_MAP
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         map.get(&self.id).unwrap_or(&vec![]).clone()
     }
 }
@@ -218,7 +229,7 @@ impl Artist {
 /// 专辑信息
 ///
 /// # Deprecated
-/// 
+///
 /// ⚠️ **此结构体已废弃，请使用 [`super::album::Album`](super::album::Album) 替代**
 #[deprecated(since = "3.1.0", note = "Use crate::models::album::Album instead")]
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -238,9 +249,12 @@ pub struct Album {
 /// 用于统计和展示应用程序缓存的使用情况
 ///
 /// # Deprecated
-/// 
+///
 /// ⚠️ **此结构体可能在未来版本中重构**
-#[deprecated(since = "3.1.0", note = "This struct may be refactored in future versions")]
+#[deprecated(
+    since = "3.1.0",
+    note = "This struct may be refactored in future versions"
+)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CacheSizeInfo {
     /// 总缓存大小（字节）

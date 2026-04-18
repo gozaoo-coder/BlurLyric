@@ -2,7 +2,7 @@
 //!
 //! 包含缓存大小查询、清理和重置等功能
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use tracing::info;
@@ -40,9 +40,7 @@ pub fn get_cache_size_info() -> Result<CacheSizeInfo, String> {
                     total_size += size;
                     file_count += 1;
 
-                    let file_name = path.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
+                    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
                     if file_name.starts_with("album_") && file_name.ends_with(".webp") {
                         image_cache_size += size;
@@ -74,14 +72,11 @@ pub fn clear_image_cache() -> Result<u32, String> {
         for entry in fs::read_dir(&cache_dir).map_err(|e| e.to_string())? {
             if let Ok(entry) = entry {
                 let path = entry.path();
-                let file_name = path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
                 if file_name.starts_with("album_") && file_name.ends_with(".webp") {
-                    fs::remove_file(&path).map_err(|e| {
-                        format!("Failed to delete {}: {}", file_name, e)
-                    })?;
+                    fs::remove_file(&path)
+                        .map_err(|e| format!("Failed to delete {}: {}", file_name, e))?;
                     deleted_count += 1;
                 }
             }
@@ -98,15 +93,39 @@ pub fn reset_all_data() -> Result<(), String> {
     let cache_dir = get_cache_dir_internal()?;
 
     // 1. 清空内存缓存
-    *SONG_ID_COUNTER.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
-    *ARTIST_ID_COUNTER.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
-    *ALBUM_ID_COUNTER.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
-    MUSIC_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
-    ARTIST_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
-    ALBUM_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
-    ARTIST_SONGS_MAP.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
-    ALBUM_SONGS_MAP.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
-    MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
+    *SONG_ID_COUNTER
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
+    *ARTIST_ID_COUNTER
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
+    *ALBUM_ID_COUNTER
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
+    MUSIC_CACHE
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?
+        .clear();
+    ARTIST_CACHE
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?
+        .clear();
+    ALBUM_CACHE
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?
+        .clear();
+    ARTIST_SONGS_MAP
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?
+        .clear();
+    ALBUM_SONGS_MAP
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?
+        .clear();
+    MUSIC_DIRS
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?
+        .clear();
 
     // 2. 删除缓存目录中的所有文件
     if cache_dir.exists() {
@@ -114,9 +133,8 @@ pub fn reset_all_data() -> Result<(), String> {
             if let Ok(entry) = entry {
                 let path = entry.path();
                 if path.is_file() {
-                    fs::remove_file(&path).map_err(|e| {
-                        format!("Failed to delete {}: {}", path.display(), e)
-                    })?;
+                    fs::remove_file(&path)
+                        .map_err(|e| format!("Failed to delete {}: {}", path.display(), e))?;
                 }
             }
         }

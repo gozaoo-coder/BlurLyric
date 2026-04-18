@@ -7,8 +7,8 @@
 
 use std::collections::HashMap;
 
-use crate::models::legacy::Song;
 use crate::common::utils;
+use crate::models::legacy::Song;
 
 /// 对歌曲列表进行去重合并
 ///
@@ -23,13 +23,16 @@ use crate::common::utils;
 pub fn deduplicate_songs(songs: Vec<Song>) -> Vec<Song> {
     // 使用指纹作为key进行分组
     let mut groups: HashMap<String, Vec<Song>> = HashMap::new();
-    
+
     for song in songs {
         // 生成指纹（标准化后的标题+艺术家+专辑）
         let fingerprint = generate_fingerprint(&song);
-        groups.entry(fingerprint).or_insert_with(Vec::new).push(song);
+        groups
+            .entry(fingerprint)
+            .or_insert_with(Vec::new)
+            .push(song);
     }
-    
+
     // 合并每组歌曲
     let mut result = Vec::new();
     for (_, group) in groups {
@@ -42,7 +45,7 @@ pub fn deduplicate_songs(songs: Vec<Song>) -> Vec<Song> {
             result.push(merged);
         }
     }
-    
+
     result
 }
 
@@ -58,12 +61,15 @@ pub fn deduplicate_songs(songs: Vec<Song>) -> Vec<Song> {
 /// 格式为 "标题|艺术家1&艺术家2|专辑" 的字符串
 pub fn generate_fingerprint(song: &Song) -> String {
     let normalized_title = normalize_for_dedup(&song.name);
-    let normalized_artists: Vec<String> = song.ar.iter()
+    let normalized_artists: Vec<String> = song
+        .ar
+        .iter()
         .map(|a| normalize_for_dedup(&a.name))
         .collect();
     let normalized_album = normalize_for_dedup(&song.al.name);
-    
-    format!("{}|{}|{}", 
+
+    format!(
+        "{}|{}|{}",
         normalized_title,
         normalized_artists.join("&"),
         normalized_album
@@ -98,30 +104,30 @@ pub fn merge_songs(mut songs: Vec<Song>) -> Song {
         let score_b = calculate_song_quality_score(b);
         score_b.cmp(&score_a)
     });
-    
+
     // 主歌曲（音质最高的）
     let mut primary = songs.remove(0);
-    
+
     // 收集所有来源
     let mut all_sources = primary.sources.clone();
-    
+
     // 添加其他歌曲的来源
     for song in songs {
         all_sources.extend(song.sources);
     }
-    
+
     // 重新计算音质评分并排序来源
     all_sources.sort_by(|a, b| b.quality_score.cmp(&a.quality_score));
-    
+
     // 更新主歌曲的来源信息
     primary.sources = all_sources;
     primary.primary_source_index = 0;
-    
+
     // 更新主歌曲的路径为音质最高的来源
     if let Some(best_source) = primary.sources.first() {
         primary.src = std::path::PathBuf::from(&best_source.path);
     }
-    
+
     primary
 }
 
@@ -135,7 +141,8 @@ pub fn merge_songs(mut songs: Vec<Song>) -> Song {
 /// # 返回值
 /// 音质评分（0-100）
 fn calculate_song_quality_score(song: &Song) -> u32 {
-    let format = song.src
+    let format = song
+        .src
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("unknown");

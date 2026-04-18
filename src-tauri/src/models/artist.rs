@@ -1,7 +1,7 @@
 //! Artist - 艺人数据模型
 
+use crate::core::trace::{BaseModel, Trace};
 use serde::{Deserialize, Serialize};
-use crate::trace::{Trace, BaseModel};
 
 /// Artist - 艺人完整信息
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -39,7 +39,7 @@ pub struct Artist {
     pub avatar_url: Option<String>,
     /// 本地头像资源
     pub local_avatar: Option<LocalAvatarInfo>,
-    
+
     // ========== 向后兼容字段 ==========
     /// 别名（旧格式）
     #[serde(default)]

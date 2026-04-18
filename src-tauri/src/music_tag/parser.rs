@@ -1,14 +1,13 @@
+use super::audio_properties::parse_audio_properties;
+use super::error::*;
 /**
  * MusicTag Rust模块 - 元数据解析器
- * 
+ *
  * 提供音乐元数据解析功能，支持多种音频格式
  */
-
 use super::types::*;
-use super::error::*;
-use super::audio_properties::parse_audio_properties;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 /// 元数据解析器
 pub struct MetadataParser {
@@ -31,10 +30,8 @@ impl MetadataParser {
     /// 检测音频格式
     pub fn detect_format<P: AsRef<Path>>(path: P) -> Option<AudioFormat> {
         let path = path.as_ref();
-        let ext = path.extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
         let format = AudioFormat::from_extension(ext);
         if format == AudioFormat::Unknown {
             None
@@ -51,20 +48,21 @@ impl MetadataParser {
     /// 解析音乐文件元数据
     pub fn parse<P: AsRef<Path>>(&self, path: P) -> Result<MusicMetadata> {
         let path = path.as_ref();
-        
+
         // 检查文件是否存在
         if !path.exists() {
             return Err(file_not_found(path));
         }
 
         // 检测音频格式
-        let format = Self::detect_format(path)
-            .ok_or_else(|| unsupported_format(
+        let format = Self::detect_format(path).ok_or_else(|| {
+            unsupported_format(
                 path,
                 path.extension()
                     .and_then(|e| e.to_str())
-                    .unwrap_or("unknown")
-            ))?;
+                    .unwrap_or("unknown"),
+            )
+        })?;
 
         // 根据格式选择解析方法
         let mut metadata = match format {
@@ -74,22 +72,21 @@ impl MetadataParser {
             AudioFormat::WAV => self.parse_wav(path),
             _ => Err(unsupported_format(path, format.to_string())),
         }?;
-        
+
         // 解析音频时长和属性
         let (duration, bitrate, sample_rate, channels) = self.parse_audio_properties(path);
         metadata.duration = duration;
         metadata.bitrate = bitrate;
         metadata.sample_rate = sample_rate;
         metadata.channels = channels;
-        
+
         Ok(metadata)
     }
 
     /// 解析MP3文件（ID3标签）
     fn parse_mp3(&self, path: &Path) -> Result<MusicMetadata> {
         // 读取文件内容
-        let data = fs::read(path)
-            .map_err(|e| io_error(path, e.to_string()))?;
+        let data = fs::read(path).map_err(|e| io_error(path, e.to_string()))?;
 
         // 尝试解析ID3v2标签
         if let Some(metadata) = self.parse_id3v2(&data, path) {
@@ -102,7 +99,8 @@ impl MetadataParser {
         }
 
         // 如果都没有标签，使用文件名作为标题
-        let title = path.file_stem()
+        let title = path
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("Unknown")
             .to_string();
@@ -124,7 +122,7 @@ impl MetadataParser {
         let version = data[3];
         let _revision = data[4];
         let flags = data[5];
-        
+
         // 计算标签大小（同步安全整数）
         let size = ((data[6] as usize) << 21)
             | ((data[7] as usize) << 14)
@@ -135,11 +133,7 @@ impl MetadataParser {
             return None;
         }
 
-        let mut metadata = MusicMetadata::new(
-            String::new(),
-            Vec::new(),
-            Album::new(String::new()),
-        );
+        let mut metadata = MusicMetadata::new(String::new(), Vec::new(), Album::new(String::new()));
 
         let mut pos = 10;
         let end = 10 + size;
@@ -166,7 +160,8 @@ impl MetadataParser {
 
         // 如果没有标题，使用文件名
         if metadata.title.is_empty() {
-            metadata.title = path.file_stem()
+            metadata.title = path
+                .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("Unknown")
                 .to_string();
@@ -224,7 +219,8 @@ impl MetadataParser {
             "TIT2" => metadata.title = text,
             "TPE1" => {
                 // 主艺术家（可以有多个，以/或\0分隔）
-                let artists: Vec<Artist> = text.split(&['/', '\0'][..])
+                let artists: Vec<Artist> = text
+                    .split(&['/', '\0'][..])
                     .filter(|s| !s.is_empty())
                     .map(|s| Artist::new(s.trim()))
                     .collect();
@@ -283,7 +279,8 @@ impl MetadataParser {
             _ => {
                 // 只收集文本类型的帧（T开头的帧）
                 if frame_id.starts_with('T') && !text.is_empty() {
-                    metadata.other_tags
+                    metadata
+                        .other_tags
                         .get_or_insert_with(std::collections::HashMap::new)
                         .insert(frame_id.to_string(), text);
                 }
@@ -340,7 +337,9 @@ impl MetadataParser {
         } else {
             // UTF-16编码的MIME类型（很少见）
             pos += 2; // 跳过BOM
-            let end = data[pos..].chunks_exact(2).position(|chunk| chunk == [0, 0])?;
+            let end = data[pos..]
+                .chunks_exact(2)
+                .position(|chunk| chunk == [0, 0])?;
             let mime_bytes: Vec<u8> = data[pos..pos + end * 2].to_vec();
             pos += end * 2 + 2;
             String::from_utf8_lossy(&mime_bytes).to_string()
@@ -362,7 +361,9 @@ impl MetadataParser {
             desc
         } else {
             pos += 2; // 跳过BOM
-            let end = data[pos..].chunks_exact(2).position(|chunk| chunk == [0, 0])?;
+            let end = data[pos..]
+                .chunks_exact(2)
+                .position(|chunk| chunk == [0, 0])?;
             let desc_bytes: Vec<u8> = data[pos..pos + end * 2].to_vec();
             pos += end * 2 + 2;
             String::from_utf8_lossy(&desc_bytes).to_string()
@@ -387,7 +388,7 @@ impl MetadataParser {
 
         // ID3v1标签在文件末尾
         let start = data.len() - 128;
-        
+
         // 检查TAG标识
         if &data[start..start + 3] != b"TAG" {
             return None;
@@ -396,10 +397,7 @@ impl MetadataParser {
         let read_string = |offset: usize, len: usize| -> String {
             let bytes = &data[start + offset..start + offset + len];
             // 去除尾部空格和null字节
-            let trimmed: Vec<u8> = bytes.iter()
-                .take_while(|&&b| b != 0)
-                .copied()
-                .collect();
+            let trimmed: Vec<u8> = bytes.iter().take_while(|&&b| b != 0).copied().collect();
             String::from_utf8_lossy(&trimmed).to_string()
         };
 
@@ -412,13 +410,21 @@ impl MetadataParser {
         let genre = data[start + 127];
 
         let mut metadata = MusicMetadata::new(
-            if title.is_empty() { 
-                path.file_stem()?.to_str()?.to_string() 
-            } else { 
-                title 
+            if title.is_empty() {
+                path.file_stem()?.to_str()?.to_string()
+            } else {
+                title
             },
-            vec![Artist::new(if artist.is_empty() { "Unknown Artist" } else { &artist })],
-            Album::new(if album.is_empty() { "Unknown Album" } else { &album }),
+            vec![Artist::new(if artist.is_empty() {
+                "Unknown Artist"
+            } else {
+                &artist
+            })],
+            Album::new(if album.is_empty() {
+                "Unknown Album"
+            } else {
+                &album
+            }),
         );
 
         if let Ok(y) = year.parse::<u32>() {
@@ -525,8 +531,7 @@ impl MetadataParser {
 
     /// 解析FLAC文件（Vorbis Comment）
     fn parse_flac(&self, path: &Path) -> Result<MusicMetadata> {
-        let data = fs::read(path)
-            .map_err(|e| io_error(path, e.to_string()))?;
+        let data = fs::read(path).map_err(|e| io_error(path, e.to_string()))?;
 
         // 检查FLAC标识
         if data.len() < 4 || &data[0..4] != b"fLaC" {
@@ -534,7 +539,8 @@ impl MetadataParser {
         }
 
         let mut pos = 4;
-        let mut comments: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut comments: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
         let mut pictures: Vec<Picture> = Vec::new();
 
         // 解析FLAC元数据块
@@ -559,7 +565,8 @@ impl MetadataParser {
             match block_type {
                 4 => {
                     // Vorbis Comment
-                    if let Some((c, pics)) = self.parse_vorbis_comment(&data[pos..pos + block_size]) {
+                    if let Some((c, pics)) = self.parse_vorbis_comment(&data[pos..pos + block_size])
+                    {
                         comments = c;
                         if let Some(p) = pics {
                             pictures = p;
@@ -583,22 +590,24 @@ impl MetadataParser {
         }
 
         // 构建元数据
-        let title = comments.get("TITLE")
-            .cloned()
-            .unwrap_or_else(|| {
-                path.file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("Unknown")
-                    .to_string()
-            });
+        let title = comments.get("TITLE").cloned().unwrap_or_else(|| {
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+                .to_string()
+        });
 
-        let artists: Vec<Artist> = comments.get("ARTIST")
-            .map(|a| a.split(&['/', ';'][..])
-                .map(|s| Artist::new(s.trim()))
-                .collect())
+        let artists: Vec<Artist> = comments
+            .get("ARTIST")
+            .map(|a| {
+                a.split(&['/', ';'][..])
+                    .map(|s| Artist::new(s.trim()))
+                    .collect()
+            })
             .unwrap_or_else(|| vec![Artist::new("Unknown Artist")]);
 
-        let album_name = comments.get("ALBUM")
+        let album_name = comments
+            .get("ALBUM")
             .cloned()
             .unwrap_or_else(|| "Unknown Album".to_string());
 
@@ -661,7 +670,13 @@ impl MetadataParser {
     }
 
     /// 解析Vorbis Comment
-    fn parse_vorbis_comment(&self, data: &[u8]) -> Option<(std::collections::HashMap<String, String>, Option<Vec<Picture>>)> {
+    fn parse_vorbis_comment(
+        &self,
+        data: &[u8],
+    ) -> Option<(
+        std::collections::HashMap<String, String>,
+        Option<Vec<Picture>>,
+    )> {
         let mut pos = 0;
         let mut comments = std::collections::HashMap::new();
 
@@ -669,7 +684,8 @@ impl MetadataParser {
         if pos + 4 > data.len() {
             return None;
         }
-        let vendor_len = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let vendor_len =
+            u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
 
         if pos + vendor_len > data.len() {
@@ -682,7 +698,8 @@ impl MetadataParser {
         if pos + 4 > data.len() {
             return None;
         }
-        let comment_count = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let comment_count =
+            u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
 
         // 读取每个comment
@@ -690,7 +707,9 @@ impl MetadataParser {
             if pos + 4 > data.len() {
                 break;
             }
-            let comment_len = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+            let comment_len =
+                u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                    as usize;
             pos += 4;
 
             if pos + comment_len > data.len() {
@@ -720,11 +739,13 @@ impl MetadataParser {
         let mut pos = 0;
 
         // 图片类型（4字节）
-        let picture_type = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as u8;
+        let picture_type =
+            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as u8;
         pos += 4;
 
         // MIME类型长度
-        let mime_len = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let mime_len =
+            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
 
         if pos + mime_len > data.len() {
@@ -740,7 +761,8 @@ impl MetadataParser {
         }
 
         // 描述长度
-        let desc_len = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let desc_len =
+            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
 
         if pos + desc_len > data.len() {
@@ -763,7 +785,8 @@ impl MetadataParser {
         }
 
         // 图片数据长度
-        let data_len = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let data_len =
+            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
 
         if pos + data_len > data.len() {
@@ -790,8 +813,7 @@ impl MetadataParser {
 
     /// 解析WAV文件
     fn parse_wav(&self, path: &Path) -> Result<MusicMetadata> {
-        let data = fs::read(path)
-            .map_err(|e| io_error(path, e.to_string()))?;
+        let data = fs::read(path).map_err(|e| io_error(path, e.to_string()))?;
 
         // 检查RIFF标识
         if data.len() < 12 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
@@ -800,7 +822,8 @@ impl MetadataParser {
 
         // WAV文件通常没有标准元数据标签
         // 使用文件名作为标题
-        let title = path.file_stem()
+        let title = path
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("Unknown")
             .to_string();
@@ -815,22 +838,22 @@ impl MetadataParser {
     /// 读取音频文件信息
     pub fn read_file_info<P: AsRef<Path>>(&self, path: P) -> Result<AudioFileInfo> {
         let path = path.as_ref();
-        
+
         if !path.exists() {
             return Err(file_not_found(path));
         }
 
-        let metadata = fs::metadata(path)
-            .map_err(|e| io_error(path, e.to_string()))?;
+        let metadata = fs::metadata(path).map_err(|e| io_error(path, e.to_string()))?;
 
-        let format = Self::detect_format(path)
-            .ok_or_else(|| unsupported_format(path, "unknown"))?;
+        let format =
+            Self::detect_format(path).ok_or_else(|| unsupported_format(path, "unknown"))?;
 
         Ok(AudioFileInfo {
             path: path.to_string_lossy().to_string(),
             format,
             size: metadata.len(),
-            modified_time: metadata.modified()
+            modified_time: metadata
+                .modified()
                 .ok()
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs()),
@@ -842,7 +865,10 @@ impl MetadataParser {
         duration
     }
 
-    pub fn parse_audio_properties<P: AsRef<Path>>(&self, path: P) -> (Option<f64>, Option<u32>, Option<u32>, Option<u8>) {
+    pub fn parse_audio_properties<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> (Option<f64>, Option<u32>, Option<u32>, Option<u8>) {
         parse_audio_properties(path.as_ref())
     }
 }

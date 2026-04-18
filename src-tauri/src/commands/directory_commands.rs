@@ -2,10 +2,10 @@
 //!
 //! 包含音乐目录的添加、删除、保存和加载等操作
 
-use std::path::PathBuf;
-use std::fs;
 use serde_json;
-use tracing::{debug, warn, error};
+use std::fs;
+use std::path::PathBuf;
+use tracing::{debug, error, warn};
 
 use crate::common::utils;
 use crate::state::*;
@@ -23,7 +23,9 @@ pub fn add_users_music_dir() {
 /// 获取用户默认音乐目录路径
 #[tauri::command]
 pub fn get_users_music_dir() -> String {
-    dirs::audio_dir().map(|dir| dir.to_str().unwrap().to_string()).unwrap_or_default()
+    dirs::audio_dir()
+        .map(|dir| dir.to_str().unwrap().to_string())
+        .unwrap_or_default()
 }
 
 /// 获取所有已添加的音乐目录
@@ -31,7 +33,9 @@ pub fn get_users_music_dir() -> String {
 pub fn get_all_music_dirs() -> Result<Vec<String>, String> {
     // 返回用户手动添加的音乐目录，而不是缓存中的所有目录
     // 这样可以避免子目录被显示为独立的文件夹
-    let music_dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    let music_dirs = MUSIC_DIRS
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?;
     let dirs: Vec<String> = music_dirs
         .iter()
         .map(|path| path.display().to_string())
@@ -49,7 +53,9 @@ pub fn add_music_dirs(new_dirs: Vec<String>) -> Result<(), String> {
         }
     }
     {
-        let mut music_dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+        let mut music_dirs = MUSIC_DIRS
+            .lock()
+            .map_err(|e| format!("Mutex poisoned: {}", e))?;
         music_dirs.extend(new_dirs.iter().map(PathBuf::from));
     }
     let _ = save_music_dirs_to_disk();
@@ -60,10 +66,14 @@ pub fn add_music_dirs(new_dirs: Vec<String>) -> Result<(), String> {
 #[tauri::command]
 pub fn remove_music_dirs(dirs_to_remove: Vec<String>) -> Result<(), String> {
     {
-        let mut music_dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+        let mut music_dirs = MUSIC_DIRS
+            .lock()
+            .map_err(|e| format!("Mutex poisoned: {}", e))?;
         music_dirs.retain(|dir| !dirs_to_remove.contains(&dir.display().to_string()));
 
-        let mut cache = MUSIC_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+        let mut cache = MUSIC_CACHE
+            .lock()
+            .map_err(|e| format!("Mutex poisoned: {}", e))?;
         for dir_str in dirs_to_remove {
             let dir = PathBuf::from(dir_str);
             cache.remove(&dir);
@@ -94,7 +104,9 @@ pub fn save_music_dirs_to_disk() -> Result<(), String> {
     };
 
     let dirs_clone = {
-        let dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+        let dirs = MUSIC_DIRS
+            .lock()
+            .map_err(|e| format!("Mutex poisoned: {}", e))?;
         dirs.clone()
     };
 
@@ -136,7 +148,9 @@ pub fn load_music_dirs_from_disk() -> Result<(), String> {
         let file = fs::File::open(&file_path).map_err(|e| e.to_string())?;
         let dirs: Vec<PathBuf> = serde_json::from_reader(file).map_err(|e| e.to_string())?;
 
-        let mut music_dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+        let mut music_dirs = MUSIC_DIRS
+            .lock()
+            .map_err(|e| format!("Mutex poisoned: {}", e))?;
         *music_dirs = dirs;
     }
     Ok(())

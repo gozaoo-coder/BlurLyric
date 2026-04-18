@@ -1,26 +1,31 @@
 //! 数据模型模块
-//! 
+//!
 //! 统一数据模型，支持 Trace 来源追踪机制
 
-mod track;
-mod artist;
 mod album;
+mod artist;
 pub mod legacy;
+mod track;
 
 #[allow(unused_imports)]
-pub use track::{Track, TrackSummup, TrackSourceInfo};
+pub use album::{Album, AlbumSummup};
 #[allow(unused_imports)]
 pub use artist::{Artist, ArtistSummup};
 #[allow(unused_imports)]
-pub use album::{Album, AlbumSummup};
+pub use track::{Track, TrackSourceInfo, TrackSummup};
 
 // 重新导出旧版数据模型（从 lib.rs 迁移）
 #[allow(unused_imports)]
-pub use legacy::{Song, Artist as LegacyArtist, Album as LegacyAlbum, TrackSourceInfo as LegacyTrackSourceInfo, CacheSizeInfo};
+pub use legacy::{
+    Album as LegacyAlbum, Artist as LegacyArtist, CacheSizeInfo, Song,
+    TrackSourceInfo as LegacyTrackSourceInfo,
+};
 
 // 重新导出 trace 模块中的公共类型
 #[allow(unused_imports)]
-pub use crate::trace::{Trace, TraceDataType, SourceType, StorageType, FetchMethod, ResourceInfo, BaseModel};
+pub use crate::core::trace::{
+    BaseModel, FetchMethod, ResourceInfo, SourceType, StorageType, Trace, TraceDataType,
+};
 
 // ==================== 转换 Trait 实现 ====================
 // 第一阶段：纯后端安全改动，提供类型转换能力
@@ -31,24 +36,25 @@ use std::path::PathBuf;
 
 impl From<legacy::Song> for Track {
     /// 从旧版 Song 结构体转换为新的 Track 结构体
-    /// 
+    ///
     /// 保持 JSON 序列化输出完全一致（通过 serde rename 实现向后兼容）
     fn from(song: legacy::Song) -> Self {
         // 构建 Trace 列表
-        let traces: Vec<Trace> = song.sources.iter().map(|s| {
-            Trace::local_file(
-                s.path.clone(),
-                TraceDataType::Track,
-                s.id.to_string(),
-            ).with_resource_info(ResourceInfo {
-                format: Some(s.format.clone()),
-                bitrate: s.bitrate,
-                sample_rate: s.sample_rate,
-                size: Some(s.file_size),
-                duration: s.duration,
-                quality_score: Some(s.quality_score),
+        let traces: Vec<Trace> = song
+            .sources
+            .iter()
+            .map(|s| {
+                Trace::local_file(s.path.clone(), TraceDataType::Track, s.id.to_string())
+                    .with_resource_info(ResourceInfo {
+                        format: Some(s.format.clone()),
+                        bitrate: s.bitrate,
+                        sample_rate: s.sample_rate,
+                        size: Some(s.file_size),
+                        duration: s.duration,
+                        quality_score: Some(s.quality_score),
+                    })
             })
-        }).collect();
+            .collect();
 
         // 如果 sources 为空，从 src 创建默认 trace
         let traces = if traces.is_empty() {
@@ -62,13 +68,15 @@ impl From<legacy::Song> for Track {
         };
 
         // 转换艺术家列表为旧格式（用于向后兼容）
-        let ar: Vec<track::LegacyArtist> = song.ar.iter().map(|a| {
-            track::LegacyArtist {
+        let ar: Vec<track::LegacyArtist> = song
+            .ar
+            .iter()
+            .map(|a| track::LegacyArtist {
                 id: a.id,
                 name: a.name.clone(),
                 alias: a.alias.clone(),
-            }
-        }).collect();
+            })
+            .collect();
 
         // 转换专辑为旧格式（用于向后兼容）
         let al = Some(track::LegacyAlbum {
@@ -78,8 +86,10 @@ impl From<legacy::Song> for Track {
         });
 
         // 转换来源信息列表
-        let sources: Vec<track::TrackSourceInfo> = song.sources.iter().map(|s| {
-            track::TrackSourceInfo {
+        let sources: Vec<track::TrackSourceInfo> = song
+            .sources
+            .iter()
+            .map(|s| track::TrackSourceInfo {
                 id: s.id,
                 path: s.path.clone(),
                 format: s.format.clone(),
@@ -88,8 +98,8 @@ impl From<legacy::Song> for Track {
                 duration: s.duration,
                 quality_score: s.quality_score,
                 file_size: s.file_size,
-            }
-        }).collect();
+            })
+            .collect();
 
         Track {
             // 新格式字段
@@ -98,17 +108,25 @@ impl From<legacy::Song> for Track {
             duration: song.duration,
             track_number: Some(song.track_number),
             disc_number: None,
-            artists: song.ar.iter().map(|a| ArtistSummup {
-                id: a.id.to_string(),
-                name: a.name.clone(),
-                avatar_url: None,
-                traces: vec![],
-            }).collect(),
+            artists: song
+                .ar
+                .iter()
+                .map(|a| ArtistSummup {
+                    id: a.id.to_string(),
+                    name: a.name.clone(),
+                    avatar_url: None,
+                    traces: vec![],
+                })
+                .collect(),
             album: Some(AlbumSummup {
                 id: song.al.id.to_string(),
                 name: song.al.name.clone(),
                 artists: vec![],
-                cover_url: if song.al.pic_url.is_empty() { None } else { Some(song.al.pic_url.clone()) },
+                cover_url: if song.al.pic_url.is_empty() {
+                    None
+                } else {
+                    Some(song.al.pic_url.clone())
+                },
                 traces: vec![],
             }),
             traces,
@@ -124,7 +142,11 @@ impl From<legacy::Song> for Track {
             bitrate: song.bitrate,
             sample_rate: song.sample_rate,
             channels: song.channels,
-            lyrics: if song.lyric.is_empty() { None } else { Some(song.lyric.clone()) },
+            lyrics: if song.lyric.is_empty() {
+                None
+            } else {
+                Some(song.lyric.clone())
+            },
             other_tags: song.other_tags,
             // 向后兼容字段（serde rename 确保输出一致）
             ar,
@@ -146,7 +168,7 @@ impl From<&legacy::Song> for Track {
 
 impl From<CachedSongMetadata> for Track {
     /// 从缓存的歌曲元数据转换为新的 Track 结构体
-    /// 
+    ///
     /// 用于持久化缓存加载时的数据转换
     fn from(cached: CachedSongMetadata) -> Self {
         // 从 fingerprint 创建主 trace
@@ -158,7 +180,7 @@ impl From<CachedSongMetadata> for Track {
 
         // 构建来源信息
         let src = cached.fingerprint.path.display().to_string();
-        
+
         Track {
             // 新格式字段
             id: cached.id.to_string(),
@@ -166,12 +188,16 @@ impl From<CachedSongMetadata> for Track {
             duration: cached.duration,
             track_number: Some(cached.track_number),
             disc_number: None,
-            artists: cached.artists.iter().map(|name| ArtistSummup {
-                id: String::new(), // 缓存中没有艺术家 ID，需要后续填充
-                name: name.clone(),
-                avatar_url: None,
-                traces: vec![],
-            }).collect(),
+            artists: cached
+                .artists
+                .iter()
+                .map(|name| ArtistSummup {
+                    id: String::new(), // 缓存中没有艺术家 ID，需要后续填充
+                    name: name.clone(),
+                    avatar_url: None,
+                    traces: vec![],
+                })
+                .collect(),
             album: Some(AlbumSummup {
                 id: String::new(), // 缓存中没有专辑 ID，需要后续填充
                 name: cached.album.clone(),
@@ -192,14 +218,22 @@ impl From<CachedSongMetadata> for Track {
             bitrate: None, // 缓存中暂无此信息
             sample_rate: None,
             channels: None,
-            lyrics: if cached.lyric.is_empty() { None } else { Some(cached.lyric.clone()) },
+            lyrics: if cached.lyric.is_empty() {
+                None
+            } else {
+                Some(cached.lyric.clone())
+            },
             other_tags: None,
             // 向后兼容字段
-            ar: cached.artists.iter().map(|name| track::LegacyArtist {
-                id: 0,
-                name: name.clone(),
-                alias: vec![],
-            }).collect(),
+            ar: cached
+                .artists
+                .iter()
+                .map(|name| track::LegacyArtist {
+                    id: 0,
+                    name: name.clone(),
+                    alias: vec![],
+                })
+                .collect(),
             al: Some(track::LegacyAlbum {
                 id: 0,
                 name: cached.album.clone(),
@@ -210,7 +244,10 @@ impl From<CachedSongMetadata> for Track {
             sources: vec![track::TrackSourceInfo {
                 id: cached.id,
                 path: src,
-                format: cached.fingerprint.path.extension()
+                format: cached
+                    .fingerprint
+                    .path
+                    .extension()
                     .and_then(|e| e.to_str())
                     .unwrap_or("unknown")
                     .to_string(),

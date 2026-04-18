@@ -1,7 +1,7 @@
 //! Album - 专辑数据模型
 
+use crate::core::trace::{BaseModel, Trace};
 use serde::{Deserialize, Serialize};
-use crate::trace::{Trace, BaseModel};
 
 /// Album - 专辑完整信息
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -39,7 +39,7 @@ pub struct Album {
     pub cover_url: Option<String>,
     /// 本地封面资源
     pub local_cover: Option<LocalCoverInfo>,
-    
+
     // ========== 向后兼容字段 ==========
     /// 封面图片 URL（旧格式）
     #[serde(default)]
@@ -92,7 +92,11 @@ impl Album {
         Album {
             id: id.to_string(),
             name,
-            cover_url: if pic_url.is_empty() { None } else { Some(pic_url.clone()) },
+            cover_url: if pic_url.is_empty() {
+                None
+            } else {
+                Some(pic_url.clone())
+            },
             pic_url,
             ..Default::default()
         }

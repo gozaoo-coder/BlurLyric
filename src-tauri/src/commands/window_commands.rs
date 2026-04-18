@@ -1,9 +1,9 @@
 //! 窗口控制命令模块
-//! 
+//!
 //! 包含窗口关闭、最小化、最大化、置顶等操作
 
-use std::sync::Mutex;
 use once_cell::sync::Lazy;
+use std::sync::Mutex;
 
 /// 窗口置顶状态
 static ALWAYS_ON_TOP_STATE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
@@ -47,13 +47,13 @@ pub async fn toggle_always_on_top(window: tauri::Window) -> Result<bool, String>
         *state = !*state;
         *state
     };
-    
+
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         window
             .set_always_on_top(new_state)
             .map_err(|e| e.to_string())?;
     }
-    
+
     Ok(new_state)
 }
