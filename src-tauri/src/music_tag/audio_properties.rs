@@ -1,7 +1,8 @@
 use std::path::Path;
 
 pub fn parse_audio_properties(path: &Path) -> (Option<f64>, Option<u32>, Option<u32>, Option<u8>) {
-    let ext = path.extension()
+    let ext = path
+        .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
@@ -53,7 +54,12 @@ fn parse_flac_properties(path: &Path) -> (Option<f64>, Option<u32>, Option<u32>,
         | ((si[21] as u64) << 56);
 
     if total_samples == 0xFFFFFFFFFFFF {
-        return (Some(0.0), Some(sample_rate), Some(sample_rate), Some(channels));
+        return (
+            Some(0.0),
+            Some(sample_rate),
+            Some(sample_rate),
+            Some(channels),
+        );
     }
 
     let duration = total_samples as f64 / sample_rate as f64;
@@ -153,13 +159,19 @@ fn parse_mp3_properties(path: &Path) -> (Option<f64>, Option<u32>, Option<u32>, 
                     let mut offset = xing_pos + 4;
                     if flags & 0x01 != 0 && offset + 4 <= data.len() {
                         vbr_frame_count = Some(u32::from_be_bytes([
-                            data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
+                            data[offset],
+                            data[offset + 1],
+                            data[offset + 2],
+                            data[offset + 3],
                         ]) as u64);
                         offset += 4;
                     }
                     if flags & 0x02 != 0 && offset + 4 <= data.len() {
                         let _vbr_bytes = u32::from_be_bytes([
-                            data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
+                            data[offset],
+                            data[offset + 1],
+                            data[offset + 2],
+                            data[offset + 3],
                         ]);
                         vbr_bytes_found = true;
                     }
@@ -183,22 +195,38 @@ fn parse_mp3_properties(path: &Path) -> (Option<f64>, Option<u32>, Option<u32>, 
         let padding = (header >> 9) & 0x01;
         let channel_mode = (header >> 6) & 0x03;
 
-        if version == 1 || layer == 0 || layer == 3 || bitrate_idx == 0 || bitrate_idx == 15 || sr_idx == 3 {
+        if version == 1
+            || layer == 0
+            || layer == 3
+            || bitrate_idx == 0
+            || bitrate_idx == 15
+            || sr_idx == 3
+        {
             pos += 1;
             continue;
         }
 
         let sr_table = [44100, 48000, 32000];
-        let br_table_mpeg1_v1 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 288, 320, 0];
-        let br_table_mpeg1_v2 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0];
-        let br_table_mpeg2 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0];
+        let br_table_mpeg1_v1 = [
+            0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 288, 320, 0,
+        ];
+        let br_table_mpeg1_v2 = [
+            0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0,
+        ];
+        let br_table_mpeg2 = [
+            0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0,
+        ];
 
         sample_rate = sr_table[sr_idx as usize];
         channels = if channel_mode == 3 { 1 } else { 2 };
 
         let br_index = bitrate_idx as usize;
         let br_kbps = if version == 3 {
-            if layer == 1 { br_table_mpeg1_v2[br_index] } else { br_table_mpeg1_v1[br_index] }
+            if layer == 1 {
+                br_table_mpeg1_v2[br_index]
+            } else {
+                br_table_mpeg1_v1[br_index]
+            }
         } else {
             br_table_mpeg2[br_index]
         };
@@ -243,7 +271,11 @@ fn parse_mp3_properties(path: &Path) -> (Option<f64>, Option<u32>, Option<u32>, 
 
     let final_frame_count = vbr_frame_count.unwrap_or(frame_count);
     let duration = final_frame_count as f64 * {
-        if first_frame_header.map(|h| (h >> 19) & 0x03) == Some(3) { 1152.0 } else { 576.0 }
+        if first_frame_header.map(|h| (h >> 19) & 0x03) == Some(3) {
+            1152.0
+        } else {
+            576.0
+        }
     } / sample_rate as f64;
 
     (Some(duration), None, Some(sample_rate), Some(channels))
@@ -296,7 +328,10 @@ fn parse_ogg_vorbis_properties(path: &Path) -> (Option<f64>, Option<u32>, Option
         if page_count == 1 && page_data.len() >= 30 {
             if page_data.len() > 7 && &page_data[1..7] == b"vorbis" {
                 sample_rate = u32::from_le_bytes([
-                    page_data[12], page_data[13], page_data[14], page_data[15],
+                    page_data[12],
+                    page_data[13],
+                    page_data[14],
+                    page_data[15],
                 ]);
                 channels = page_data[11];
             }

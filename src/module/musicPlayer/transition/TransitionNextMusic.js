@@ -3,6 +3,10 @@ import { AudioEngine } from '../core/AudioEngine';
 
 class VolumeFader {
     static fade(audioEngine, fromVolume, toVolume, durationMs, onUpdate, onComplete) {
+        // 防御性校验：非有限值默认为0
+        fromVolume = Number.isFinite(fromVolume) ? fromVolume : 0;
+        toVolume = Number.isFinite(toVolume) ? toVolume : 0;
+
         if (durationMs <= 0) {
             audioEngine.volume = toVolume;
             onComplete?.();

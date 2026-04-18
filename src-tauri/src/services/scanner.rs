@@ -8,14 +8,16 @@
 
 use std::fs::{self, DirEntry};
 use std::path::PathBuf;
-use tracing::{info, debug, warn, error};
+use tracing::{debug, error, info, warn};
 
-use crate::state::*;
-use crate::models::legacy::{Song, Artist, Album, TrackSourceInfo};
+use super::deduplication::{
+    deduplicate_songs, generate_fingerprint, merge_songs, normalize_for_dedup,
+};
 use crate::common::utils;
+use crate::core::trace::{ResourceInfo, Trace, TraceDataType};
+use crate::models::legacy::{Album, Artist, Song, TrackSourceInfo};
 use crate::music_tag::MetadataParser;
-use crate::trace::{Trace, TraceDataType, ResourceInfo};
-use super::deduplication::{deduplicate_songs, generate_fingerprint, merge_songs, normalize_for_dedup};
+use crate::state::*;
 
 /// 扫描文件夹中的音乐文件（递归）
 ///
@@ -108,12 +110,14 @@ pub fn parse_music_file(file: PathBuf) -> Result<Song, String> {
             } else {
                 metadata.title
             };
-            
+
             // 处理多个艺术家
             let artists: Vec<Artist> = if metadata.artists.is_empty() {
                 vec![get_or_create_artist("Unknown Artist".to_string())]
             } else {
-                metadata.artists.iter()
+                metadata
+                    .artists
+                    .iter()
                     .flat_map(|artist| {
                         split_artist_names(vec![&artist.name])
                             .iter()
@@ -130,13 +134,14 @@ pub fn parse_music_file(file: PathBuf) -> Result<Song, String> {
             };
 
             let album = get_or_create_album(album_name);
-            
+
             // 获取文件格式
-            let format = file.extension()
+            let format = file
+                .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("unknown")
                 .to_string();
-            
+
             // 计算音质评分
             let quality_score = calculate_quality_score(
                 metadata.bitrate,
@@ -144,7 +149,7 @@ pub fn parse_music_file(file: PathBuf) -> Result<Song, String> {
                 metadata.sample_rate,
                 metadata.duration,
             );
-            
+
             // 创建来源信息
             let source_info = TrackSourceInfo {
                 id: next_id(&SONG_ID_COUNTER),
@@ -156,13 +161,14 @@ pub fn parse_music_file(file: PathBuf) -> Result<Song, String> {
                 quality_score,
                 file_size: std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0),
             };
-            
+
             // 创建 Trace 来源追踪信息
             let trace = Trace::local_file(
                 file.display().to_string(),
                 TraceDataType::Track,
                 source_info.id.to_string(),
-            ).with_resource_info(ResourceInfo {
+            )
+            .with_resource_info(ResourceInfo {
                 format: Some(format.clone()),
                 bitrate: metadata.bitrate,
                 sample_rate: metadata.sample_rate,
@@ -170,7 +176,7 @@ pub fn parse_music_file(file: PathBuf) -> Result<Song, String> {
                 duration: metadata.duration,
                 quality_score: Some(quality_score),
             });
-            
+
             Song {
                 name: title,
                 id: source_info.id,
@@ -201,11 +207,12 @@ pub fn parse_music_file(file: PathBuf) -> Result<Song, String> {
         Err(_) => {
             // 如果读取标签失败，则使用默认值
             let album = get_or_create_album("Unknown Album".to_string());
-            let format = file.extension()
+            let format = file
+                .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("unknown")
                 .to_string();
-            
+
             let source_info = TrackSourceInfo {
                 id: next_id(&SONG_ID_COUNTER),
                 path: file.display().to_string(),
@@ -216,13 +223,14 @@ pub fn parse_music_file(file: PathBuf) -> Result<Song, String> {
                 quality_score: 0,
                 file_size: std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0),
             };
-            
+
             // 创建 Trace 来源追踪信息
             let trace = Trace::local_file(
                 file.display().to_string(),
                 TraceDataType::Track,
                 source_info.id.to_string(),
-            ).with_resource_info(ResourceInfo {
+            )
+            .with_resource_info(ResourceInfo {
                 format: None,
                 bitrate: None,
                 sample_rate: None,
@@ -230,7 +238,7 @@ pub fn parse_music_file(file: PathBuf) -> Result<Song, String> {
                 duration: None,
                 quality_score: Some(0),
             });
-            
+
             Song {
                 name: file_name,
                 id: source_info.id,
@@ -258,7 +266,7 @@ pub fn parse_music_file(file: PathBuf) -> Result<Song, String> {
             }
         }
     };
-    
+
     {
         let mut artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
         let mut album_songs_map = ALBUM_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
@@ -289,7 +297,10 @@ pub fn parse_music_file(file: PathBuf) -> Result<Song, String> {
 /// - `dir`: 目录路径
 /// - `songs`: 该目录下的歌曲列表
 pub fn cache_music_list(dir: PathBuf, songs: Vec<Song>) {
-    MUSIC_CACHE.lock().unwrap_or_else(|e| e.into_inner()).insert(dir, songs);
+    MUSIC_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(dir, songs);
 }
 
 /// 计算单首歌曲的音质评分（委托给 utils）
@@ -300,7 +311,8 @@ pub fn cache_music_list(dir: PathBuf, songs: Vec<Song>) {
 /// # 返回值
 /// 音质评分（0-100）
 pub fn calculate_song_quality_score(song: &Song) -> u32 {
-    let format = song.src
+    let format = song
+        .src
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("unknown");

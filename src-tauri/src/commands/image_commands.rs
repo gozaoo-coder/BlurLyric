@@ -2,12 +2,12 @@
 //!
 //! 包含专辑封面获取、图片处理、音乐文件访问等相关命令
 
-use image::{imageops::FilterType, DynamicImage, GenericImageView};
+use crate::monitor::performance_monitor::{MetricType, PerformanceMonitor};
 use crate::music_tag::MetadataParser;
-use crate::image_processor::IMAGE_PROCESSOR;
-use crate::performance_monitor::{PerformanceMonitor, MetricType};
-use std::path::PathBuf;
+use crate::processor::image_processor::IMAGE_PROCESSOR;
+use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use std::fs;
+use std::path::PathBuf;
 use tokio::fs as async_fs;
 use tracing::{debug, info};
 
@@ -29,7 +29,8 @@ pub async fn get_low_quality_album_cover(
     if cache_path.exists() {
         debug!(album_id = %album_id, resolution = %max_resolution, "Cache hit for album cover");
 
-        if let Some(duration) = PerformanceMonitor::end_timer(&format!("album_cover_{}", album_id)) {
+        if let Some(duration) = PerformanceMonitor::end_timer(&format!("album_cover_{}", album_id))
+        {
             PerformanceMonitor::record_metric(
                 MetricType::CacheHit,
                 duration,
@@ -69,8 +70,11 @@ pub fn get_album_cover(album_id: u32) -> Result<tauri::ipc::Response, String> {
 
     let result = (|| {
         // 使用 O(1) 索引查找专辑封面路径
-        let cover_index = ALBUM_COVER_INDEX.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
-        let song_path = cover_index.get(&album_id)
+        let cover_index = ALBUM_COVER_INDEX
+            .lock()
+            .map_err(|e| format!("Mutex poisoned: {}", e))?;
+        let song_path = cover_index
+            .get(&album_id)
             .cloned()
             .ok_or_else(|| "Album cover not found".to_string())?;
 
@@ -87,10 +91,16 @@ pub fn get_album_cover(album_id: u32) -> Result<tauri::ipc::Response, String> {
         }
     })();
 
-    if let Some(duration) = PerformanceMonitor::end_timer(&format!("album_cover_origin_{}", album_id)) {
+    if let Some(duration) =
+        PerformanceMonitor::end_timer(&format!("album_cover_origin_{}", album_id))
+    {
         let from_cache = result.is_ok();
         PerformanceMonitor::record_metric(
-            if from_cache { MetricType::CacheHit } else { MetricType::CacheMiss },
+            if from_cache {
+                MetricType::CacheHit
+            } else {
+                MetricType::CacheMiss
+            },
             duration,
             format!("album_cover_origin:{}", album_id),
         );
@@ -108,7 +118,9 @@ pub async fn get_music_file(song_id: u32) -> Result<tauri::ipc::Response, String
 
     // 使用 O(1) 索引查找歌曲路径
     let song_path = {
-        let index = SONG_PATH_INDEX.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+        let index = SONG_PATH_INDEX
+            .lock()
+            .map_err(|e| format!("Mutex poisoned: {}", e))?;
         debug!("Index locked, looking up song");
         index.get(&song_id).cloned()
     };

@@ -1,10 +1,9 @@
 /**
  * GPU Image Processor - GPU加速图像处理模块
- * 
+ *
  * 使用 wgpu 实现跨平台 GPU 图像缩放
  * 支持自动降级到 CPU 处理
  */
-
 use image::{DynamicImage, RgbaImage};
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
@@ -65,7 +64,7 @@ impl GpuImageProcessor {
         // 创建着色器模块
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Resize Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/resize.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/resize.wgsl").into()),
         });
 
         // 创建绑定组布局
@@ -208,7 +207,7 @@ impl GpuImageProcessor {
         // 计算对齐后的 bytes_per_row (必须是 256 的倍数)
         let src_bytes_per_row_unaligned = 4 * src_width;
         let src_bytes_per_row_aligned = ((src_bytes_per_row_unaligned + 255) / 256) * 256;
-        
+
         // 如果需要对齐，创建填充后的数据
         let src_data: Vec<u8> = if src_bytes_per_row_aligned == src_bytes_per_row_unaligned {
             rgba.to_vec()
@@ -219,11 +218,15 @@ impl GpuImageProcessor {
                 let row_end = row_start + src_bytes_per_row_unaligned as usize;
                 padded.extend_from_slice(&rgba.as_raw()[row_start..row_end]);
                 // 添加填充
-                padded.extend(vec![0u8; (src_bytes_per_row_aligned - src_bytes_per_row_unaligned) as usize]);
+                padded.extend(vec![
+                    0u8;
+                    (src_bytes_per_row_aligned - src_bytes_per_row_unaligned)
+                        as usize
+                ]);
             }
             padded
         };
-        
+
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &src_texture,
@@ -269,11 +272,13 @@ impl GpuImageProcessor {
             _padding: [0.0; 4],
         };
 
-        let uniform_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[uniforms]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let uniform_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Uniform Buffer"),
+                contents: bytemuck::cast_slice(&[uniforms]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
         // 创建绑定组
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -298,9 +303,11 @@ impl GpuImageProcessor {
         });
 
         // 创建命令编码器
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Resize Encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Resize Encoder"),
+            });
 
         // 渲染通道
         {
@@ -341,9 +348,11 @@ impl GpuImageProcessor {
         });
 
         // 复制纹理到缓冲区
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Copy Encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Copy Encoder"),
+            });
 
         encoder.copy_texture_to_buffer(
             wgpu::ImageCopyTexture {
@@ -397,7 +406,12 @@ impl GpuImageProcessor {
     }
 
     /// 调整图片大小（同步版本，使用阻塞poll）
-    pub fn resize(&self, image: &DynamicImage, new_width: u32, new_height: u32) -> Result<DynamicImage, String> {
+    pub fn resize(
+        &self,
+        image: &DynamicImage,
+        new_width: u32,
+        new_height: u32,
+    ) -> Result<DynamicImage, String> {
         let (output_buffer, bytes_per_row_aligned, new_width, new_height) =
             self.submit_resize_commands(image, new_width, new_height)?;
 
@@ -486,7 +500,13 @@ pub fn resize_with_gpu_fallback(
     if let Some(gpu) = get_gpu_processor() {
         match gpu.resize(image, new_width, new_height) {
             Ok(result) => {
-                tracing::debug!(from_w = image.width(), from_h = image.height(), to_w = new_width, to_h = new_height, "GPU resize succeeded");
+                tracing::debug!(
+                    from_w = image.width(),
+                    from_h = image.height(),
+                    to_w = new_width,
+                    to_h = new_height,
+                    "GPU resize succeeded"
+                );
                 return Ok(result);
             }
             Err(e) => {
@@ -495,7 +515,13 @@ pub fn resize_with_gpu_fallback(
         }
     }
 
-    tracing::debug!(from_w = image.width(), from_h = image.height(), to_w = new_width, to_h = new_height, "Using CPU resize");
+    tracing::debug!(
+        from_w = image.width(),
+        from_h = image.height(),
+        to_w = new_width,
+        to_h = new_height,
+        "Using CPU resize"
+    );
 
     use image::imageops::FilterType;
     Ok(image.resize(new_width, new_height, FilterType::Lanczos3))
@@ -510,7 +536,13 @@ pub async fn resize_with_gpu_fallback_async(
     if let Some(gpu) = get_gpu_processor() {
         match gpu.resize_async(image, new_width, new_height).await {
             Ok(result) => {
-                tracing::debug!(from_w = image.width(), from_h = image.height(), to_w = new_width, to_h = new_height, "GPU async resize succeeded");
+                tracing::debug!(
+                    from_w = image.width(),
+                    from_h = image.height(),
+                    to_w = new_width,
+                    to_h = new_height,
+                    "GPU async resize succeeded"
+                );
                 return Ok(result);
             }
             Err(e) => {
@@ -519,7 +551,13 @@ pub async fn resize_with_gpu_fallback_async(
         }
     }
 
-    tracing::debug!(from_w = image.width(), from_h = image.height(), to_w = new_width, to_h = new_height, "Using CPU resize (async fallback)");
+    tracing::debug!(
+        from_w = image.width(),
+        from_h = image.height(),
+        to_w = new_width,
+        to_h = new_height,
+        "Using CPU resize (async fallback)"
+    );
 
     use image::imageops::FilterType;
     Ok(image.resize(new_width, new_height, FilterType::Lanczos3))

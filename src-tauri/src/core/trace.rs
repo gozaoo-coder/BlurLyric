@@ -177,7 +177,11 @@ pub struct Trace {
 
 impl Trace {
     /// 创建本地文件 Trace
-    pub fn local_file(path: impl Into<String>, data_type: TraceDataType, data_id: impl Into<String>) -> Self {
+    pub fn local_file(
+        path: impl Into<String>,
+        data_type: TraceDataType,
+        data_id: impl Into<String>,
+    ) -> Self {
         Trace {
             source_type: SourceType::Storage(StorageType::Local),
             source_id: "local".to_string(),
@@ -293,9 +297,7 @@ pub trait BaseModel: Serialize + for<'de> Deserialize<'de> + Clone + Send + Sync
 
     /// 根据来源类型获取 Trace
     fn get_trace_by_source(&self, source_type: &SourceType) -> Option<&Trace> {
-        self.traces()
-            .iter()
-            .find(|t| &t.source_type == source_type)
+        self.traces().iter().find(|t| &t.source_type == source_type)
     }
 
     /// 获取本地资源 Trace（优先）
@@ -316,7 +318,7 @@ mod tests {
     #[test]
     fn test_trace_local_file() {
         let trace = Trace::local_file("/path/to/music.mp3", TraceDataType::Track, "123");
-        
+
         assert!(trace.is_local());
         assert!(trace.is_storage());
         assert!(!trace.is_api());
@@ -347,7 +349,7 @@ mod tests {
     fn test_trace_serialization() {
         let trace = Trace::local_file("/path/to/music.mp3", TraceDataType::Track, "123");
         let json = serde_json::to_string(&trace).unwrap();
-        
+
         // 验证序列化包含 camelCase 字段
         assert!(json.contains("sourceType"));
         assert!(json.contains("sourceId"));

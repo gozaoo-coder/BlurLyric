@@ -8,24 +8,20 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use tracing::{info, debug, warn, error};
+use tracing::{debug, error, info, warn};
 
-use crate::state::*;
-use crate::models::legacy::{Song, Artist, Album, TrackSourceInfo};
-use crate::models::Track;
+use super::scanner::{cache_music_list, parse_music_file, scan_music_files};
 use crate::common::utils;
-use crate::music_library_cache::{
-    MusicLibraryCacheData,
-    CachedArtist,
-    CachedAlbum,
-    CachedSongMetadata,
-    FileFingerprint,
-    MusicLibraryCache as LibraryCacheManager
+use crate::core::incremental_scanner::IncrementalScanner;
+use crate::models::legacy::{Album, Artist, Song, TrackSourceInfo};
+use crate::models::Track;
+use crate::cache::music_library_cache::{
+    CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint,
+    MusicLibraryCache as LibraryCacheManager, MusicLibraryCacheData,
 };
-use crate::incremental_scanner::{IncrementalScanner};
-use crate::performance_monitor::{PerformanceMonitor, MetricType};
-use crate::trace::{Trace, TraceDataType, ResourceInfo};
-use super::scanner::{scan_music_files, parse_music_file, cache_music_list};
+use crate::monitor::performance_monitor::{MetricType, PerformanceMonitor};
+use crate::state::*;
+use crate::core::trace::{ResourceInfo, Trace, TraceDataType};
 
 /// 应用初始化入口
 ///
@@ -46,7 +42,7 @@ pub fn init_application() {
     }
 
     // 2. 初始化资源缓存管理器（已在 run() 中初始化，此处可移除）
-    
+
     // 3. 加载音乐目录
     if let Err(e) = load_music_dirs_from_disk() {
         error!(error = %e, "Failed to load music directories from disk");
@@ -54,7 +50,7 @@ pub fn init_application() {
 
     // 4. 尝试从缓存加载数据（快速启动）
     let cache_loaded = load_from_persistent_cache();
-    
+
     if !cache_loaded {
         info!("No valid cache found, performing full scan");
         // 首次启动或缓存无效,执行全量扫描
@@ -70,7 +66,10 @@ pub fn init_application() {
     }
 
     if let Some(duration) = PerformanceMonitor::end_timer("init_application") {
-        info!(init_duration_ms = duration, "Application initialization completed");
+        info!(
+            init_duration_ms = duration,
+            "Application initialization completed"
+        );
         PerformanceMonitor::record_metric(
             MetricType::ScanDuration,
             duration,
@@ -95,10 +94,13 @@ pub fn load_from_persistent_cache() -> bool {
                     if cache.songs.is_empty() {
                         return false;
                     }
-                    
+
                     // 将缓存数据加载到内存
                     rebuild_memory_cache_from_persistent(&cache);
-                    info!(song_count = cache.songs.len(), "Loaded songs from persistent cache");
+                    info!(
+                        song_count = cache.songs.len(),
+                        "Loaded songs from persistent cache"
+                    );
                     return true;
                 }
                 Err(e) => {
@@ -139,11 +141,14 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
         let mut artist_cache = ARTIST_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         artist_cache.clear();
         for artist in &cache.artists {
-            artist_cache.insert(artist.name.clone(), Artist {
-                id: artist.id,
-                name: artist.name.clone(),
-                alias: artist.alias.clone(),
-            });
+            artist_cache.insert(
+                artist.name.clone(),
+                Artist {
+                    id: artist.id,
+                    name: artist.name.clone(),
+                    alias: artist.alias.clone(),
+                },
+            );
         }
     }
 
@@ -152,11 +157,14 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
         let mut album_cache = ALBUM_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         album_cache.clear();
         for album in &cache.albums {
-            album_cache.insert(album.name.clone(), Album {
-                id: album.id,
-                name: album.name.clone(),
-                pic_url: album.pic_url.clone(),
-            });
+            album_cache.insert(
+                album.name.clone(),
+                Album {
+                    id: album.id,
+                    name: album.name.clone(),
+                    pic_url: album.pic_url.clone(),
+                },
+            );
         }
     }
 
@@ -165,27 +173,38 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
         let mut music_cache = MUSIC_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         let mut artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
         let mut album_songs_map = ALBUM_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
-        
+
         music_cache.clear();
         artist_songs_map.clear();
         album_songs_map.clear();
-        
+
         // 按目录组织歌曲
         let mut dir_songs: HashMap<PathBuf, Vec<Song>> = HashMap::new();
-        
+
         for cached_song in &cache.songs {
-            let dir = cached_song.fingerprint.path.parent()
+            let dir = cached_song
+                .fingerprint
+                .path
+                .parent()
                 .map(|p| p.to_path_buf())
                 .unwrap_or_default();
-            
+
             // 查找艺术家和专辑
-            let artists: Vec<Artist> = cached_song.artists.iter()
+            let artists: Vec<Artist> = cached_song
+                .artists
+                .iter()
                 .filter_map(|name| {
-                    ARTIST_CACHE.lock().unwrap_or_else(|e| e.into_inner()).get(name).cloned()
+                    ARTIST_CACHE
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get(name)
+                        .cloned()
                 })
                 .collect();
 
-            let album = ALBUM_CACHE.lock().unwrap_or_else(|e| e.into_inner())
+            let album = ALBUM_CACHE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
                 .get(&cached_song.album)
                 .cloned()
                 .unwrap_or_else(|| Album {
@@ -193,10 +212,10 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
                     name: cached_song.album.clone(),
                     pic_url: String::new(),
                 });
-            
+
             // 从缓存的来源信息构建sources
             let mut sources = Vec::new();
-            
+
             // 主来源
             if let Some(ref primary) = cached_song.primary_source {
                 sources.push(TrackSourceInfo {
@@ -211,11 +230,14 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
                 });
             } else {
                 // 如果没有主来源，从fingerprint构建
-                let format = cached_song.fingerprint.path.extension()
+                let format = cached_song
+                    .fingerprint
+                    .path
+                    .extension()
                     .and_then(|e| e.to_str())
                     .unwrap_or("unknown")
                     .to_string();
-                
+
                 sources.push(TrackSourceInfo {
                     id: cached_song.id,
                     path: cached_song.fingerprint.path.display().to_string(),
@@ -227,7 +249,7 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
                     file_size: cached_song.fingerprint.size,
                 });
             }
-            
+
             // 替代来源
             for source in &cached_song.alternative_sources {
                 sources.push(TrackSourceInfo {
@@ -241,23 +263,23 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
                     file_size: source.file_size,
                 });
             }
-            
+
             // 构建 Trace 列表（从 sources 转换）
-            let traces: Vec<Trace> = sources.iter().map(|s| {
-                Trace::local_file(
-                    s.path.clone(),
-                    TraceDataType::Track,
-                    s.id.to_string(),
-                ).with_resource_info(ResourceInfo {
-                    format: Some(s.format.clone()),
-                    bitrate: s.bitrate,
-                    sample_rate: s.sample_rate,
-                    size: Some(s.file_size),
-                    duration: s.duration,
-                    quality_score: Some(s.quality_score),
+            let traces: Vec<Trace> = sources
+                .iter()
+                .map(|s| {
+                    Trace::local_file(s.path.clone(), TraceDataType::Track, s.id.to_string())
+                        .with_resource_info(ResourceInfo {
+                            format: Some(s.format.clone()),
+                            bitrate: s.bitrate,
+                            sample_rate: s.sample_rate,
+                            size: Some(s.file_size),
+                            duration: s.duration,
+                            quality_score: Some(s.quality_score),
+                        })
                 })
-            }).collect();
-            
+                .collect();
+
             let song = Song {
                 name: cached_song.name.clone(),
                 id: cached_song.id,
@@ -284,11 +306,11 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
                 traces,
                 primary_trace_index: 0,
             };
-            
+
             // TODO(Phase 2): 未来可使用 Track::from(song) 直接转换为新的统一模型
             // let track: Track = song.clone().into();
             // 目前保持 legacy Song 以确保运行时兼容性
-            
+
             // 更新映射
             for artist in &song.ar {
                 artist_songs_map
@@ -296,15 +318,15 @@ pub fn rebuild_memory_cache_from_persistent(cache: &MusicLibraryCacheData) {
                     .or_insert_with(Vec::new)
                     .push(song.clone());
             }
-            
+
             album_songs_map
                 .entry(song.al.id)
                 .or_insert_with(Vec::new)
                 .push(song.clone());
-            
+
             dir_songs.entry(dir).or_insert_with(Vec::new).push(song);
         }
-        
+
         *music_cache = dir_songs;
     }
 }
@@ -317,7 +339,7 @@ pub fn save_to_persistent_cache() {
         if let Some(manager) = manager_guard.as_ref() {
             // 从内存缓存构建持久化缓存
             let cache = build_persistent_cache_from_memory();
-            
+
             if let Err(e) = manager.save_to_disk(&cache) {
                 error!(error = %e, "Failed to save to persistent cache");
             } else {
@@ -340,7 +362,9 @@ pub fn save_to_persistent_cache() {
 /// # 返回值
 /// 构建好的 MusicLibraryCacheData 对象
 pub fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
-    use crate::music_library_cache::{CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint};
+    use crate::cache::music_library_cache::{
+        CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint,
+    };
     let now = utils::current_timestamp();
     let mut cache = MusicLibraryCacheData::new();
 
@@ -355,7 +379,7 @@ pub fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
             });
         }
     }
-    
+
     // 复制专辑
     {
         let album_cache = ALBUM_CACHE.lock().unwrap_or_else(|e| e.into_inner());
@@ -367,7 +391,7 @@ pub fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
             });
         }
     }
-    
+
     // 复制歌曲
     {
         let music_cache = MUSIC_CACHE.lock().unwrap_or_else(|e| e.into_inner());
@@ -377,7 +401,7 @@ pub fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
                     Ok(fp) => fp,
                     Err(_) => continue,
                 };
-                
+
                 cache.songs.push(CachedSongMetadata {
                     id: song.id,
                     name: song.name.clone(),
@@ -400,28 +424,26 @@ pub fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
             }
         }
     }
-    
+
     // 复制映射关系
     {
         let artist_songs_map = ARTIST_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
         for (artist_id, songs) in artist_songs_map.iter() {
-            cache.artist_songs_map.insert(
-                *artist_id,
-                songs.iter().map(|s| s.id).collect(),
-            );
+            cache
+                .artist_songs_map
+                .insert(*artist_id, songs.iter().map(|s| s.id).collect());
         }
     }
-    
+
     {
         let album_songs_map = ALBUM_SONGS_MAP.lock().unwrap_or_else(|e| e.into_inner());
         for (album_id, songs) in album_songs_map.iter() {
-            cache.album_songs_map.insert(
-                *album_id,
-                songs.iter().map(|s| s.id).collect(),
-            );
+            cache
+                .album_songs_map
+                .insert(*album_id, songs.iter().map(|s| s.id).collect());
         }
     }
-    
+
     cache.cached_at = now;
     cache
 }
@@ -439,36 +461,51 @@ pub fn perform_background_incremental_scan() {
     std::thread::spawn(|| {
         info!("Starting background incremental scan");
         PerformanceMonitor::start_timer("background_scan");
-        
+
         // 执行增量扫描
         let music_dirs = get_music_dirs();
-        
+
         let existing_cache = if let Some(manager_guard) = LibraryCacheManager::instance() {
             if let Some(manager) = manager_guard.as_ref() {
-                manager.load_from_disk().unwrap_or_else(|_| MusicLibraryCacheData::new())
+                manager
+                    .load_from_disk()
+                    .unwrap_or_else(|_| MusicLibraryCacheData::new())
             } else {
                 MusicLibraryCacheData::new()
             }
         } else {
             MusicLibraryCacheData::new()
         };
-        
+
         let max_song_id = existing_cache.songs.iter().map(|s| s.id).max().unwrap_or(0);
-        let max_artist_id = existing_cache.artists.iter().map(|a| a.id).max().unwrap_or(0);
-        let max_album_id = existing_cache.albums.iter().map(|a| a.id).max().unwrap_or(0);
-        
+        let max_artist_id = existing_cache
+            .artists
+            .iter()
+            .map(|a| a.id)
+            .max()
+            .unwrap_or(0);
+        let max_album_id = existing_cache
+            .albums
+            .iter()
+            .map(|a| a.id)
+            .max()
+            .unwrap_or(0);
+
         let scanner = IncrementalScanner::new(max_song_id, max_artist_id, max_album_id);
-        
+
         match scanner.scan_incremental(&music_dirs, &existing_cache) {
             Ok(scan_result) => {
                 if scan_result.total_changes() > 0 {
-                    info!(changes = scan_result.total_changes(), "Background scan found changes, updating cache");
-                    
-                    let new_cache = crate::incremental_scanner::build_cache_from_scan(
-                        scan_result, 
-                        Some(&existing_cache)
+                    info!(
+                        changes = scan_result.total_changes(),
+                        "Background scan found changes, updating cache"
                     );
-                    
+
+                    let new_cache = crate::core::incremental_scanner::build_cache_from_scan(
+                        scan_result,
+                        Some(&existing_cache),
+                    );
+
                     // 保存新缓存
                     if let Some(manager_guard) = LibraryCacheManager::instance() {
                         if let Some(manager) = manager_guard.as_ref() {
@@ -476,11 +513,15 @@ pub fn perform_background_incremental_scan() {
                             manager.update_memory_cache(new_cache);
                         }
                     }
-                    
+
                     // 更新内存缓存
                     rebuild_memory_cache_from_persistent(
-                        &LibraryCacheManager::instance().unwrap().as_ref().unwrap()
-                            .load_from_disk().unwrap()
+                        &LibraryCacheManager::instance()
+                            .unwrap()
+                            .as_ref()
+                            .unwrap()
+                            .load_from_disk()
+                            .unwrap(),
                     );
                 } else {
                     info!("No changes detected in background scan");
@@ -490,7 +531,7 @@ pub fn perform_background_incremental_scan() {
                 error!(error = %e, "Background incremental scan failed");
             }
         }
-        
+
         if let Some(duration) = PerformanceMonitor::end_timer("background_scan") {
             info!(duration_ms = duration, "Background scan completed");
             PerformanceMonitor::record_metric(
@@ -510,18 +551,41 @@ pub fn perform_background_incremental_scan() {
 /// 然后重新扫描所有音乐目录。
 fn refresh_music_cache() -> Result<(), String> {
     // 重置ID计数器
-    *SONG_ID_COUNTER.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
-    *ARTIST_ID_COUNTER.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
-    *ALBUM_ID_COUNTER.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
+    *SONG_ID_COUNTER
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
+    *ARTIST_ID_COUNTER
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
+    *ALBUM_ID_COUNTER
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))? = 0;
 
     // 清空音乐、艺术家和专辑的缓存
-    MUSIC_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
-    ARTIST_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
-    ALBUM_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
-    ARTIST_SONGS_MAP.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
-    ALBUM_SONGS_MAP.lock().map_err(|e| format!("Mutex poisoned: {}", e))?.clear();
+    MUSIC_CACHE
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?
+        .clear();
+    ARTIST_CACHE
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?
+        .clear();
+    ALBUM_CACHE
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?
+        .clear();
+    ARTIST_SONGS_MAP
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?
+        .clear();
+    ALBUM_SONGS_MAP
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?
+        .clear();
 
-    let music_dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    let music_dirs = MUSIC_DIRS
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))?;
     let mut new_cache = HashMap::new();
 
     for dir in &*music_dirs {
@@ -546,7 +610,9 @@ fn refresh_music_cache() -> Result<(), String> {
         }
     }
 
-    *MUSIC_CACHE.lock().map_err(|e| format!("Mutex poisoned: {}", e))? = new_cache;
+    *MUSIC_CACHE
+        .lock()
+        .map_err(|e| format!("Mutex poisoned: {}", e))? = new_cache;
     Ok(())
 }
 
@@ -574,7 +640,9 @@ fn load_music_dirs_from_disk() -> Result<(), String> {
     } else {
         let file = std::fs::File::open(&file_path).map_err(|e| e.to_string())?;
         let dirs: Vec<PathBuf> = serde_json::from_reader(file).map_err(|e| e.to_string())?;
-        let mut music_dirs = MUSIC_DIRS.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+        let mut music_dirs = MUSIC_DIRS
+            .lock()
+            .map_err(|e| format!("Mutex poisoned: {}", e))?;
         *music_dirs = dirs;
     }
     Ok(())
@@ -587,7 +655,7 @@ fn load_music_dirs_from_disk() -> Result<(), String> {
 /// # 使用场景
 /// - 前端请求歌曲列表时，可使用此函数批量转换
 /// - Phase 2 迁移时可直接替换内存缓存结构
-/// 
+///
 /// # 示例
 /// ```ignore
 /// let songs: Vec<Song> = get_songs_from_cache();

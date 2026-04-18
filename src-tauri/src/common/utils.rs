@@ -12,7 +12,8 @@ pub fn current_timestamp() -> u64 {
 }
 
 pub fn is_music_file(entry: &DirEntry) -> bool {
-    entry.path()
+    entry
+        .path()
         .extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| MUSIC_EXTENSIONS.contains(&ext))

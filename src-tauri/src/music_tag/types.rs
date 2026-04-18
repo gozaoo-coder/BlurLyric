@@ -1,9 +1,8 @@
 /**
  * MusicTag Rust模块 - 类型定义
- * 
+ *
  * 定义音乐元数据相关的所有数据结构
  */
-
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -313,11 +312,7 @@ pub struct MusicMetadata {
 
 impl MusicMetadata {
     /// 创建新的元数据结构
-    pub fn new(
-        title: impl Into<String>,
-        artists: Vec<Artist>,
-        album: Album,
-    ) -> Self {
+    pub fn new(title: impl Into<String>, artists: Vec<Artist>, album: Album) -> Self {
         Self {
             title: title.into(),
             artists,
@@ -343,14 +338,17 @@ impl MusicMetadata {
 
     /// 获取主封面图片
     pub fn front_cover(&self) -> Option<&Picture> {
-        self.pictures.as_ref()?.iter()
+        self.pictures
+            .as_ref()?
+            .iter()
             .find(|p| p.picture_type == PictureType::FrontCover)
             .or_else(|| self.pictures.as_ref()?.first())
     }
 
     /// 获取艺术家名称字符串（逗号分隔）
     pub fn artists_string(&self) -> String {
-        self.artists.iter()
+        self.artists
+            .iter()
             .map(|a| a.name.as_str())
             .collect::<Vec<_>>()
             .join(", ")
@@ -358,7 +356,8 @@ impl MusicMetadata {
 
     /// 检查是否有封面图片
     pub fn has_cover(&self) -> bool {
-        self.pictures.as_ref()
+        self.pictures
+            .as_ref()
             .map(|p| !p.is_empty())
             .unwrap_or(false)
     }

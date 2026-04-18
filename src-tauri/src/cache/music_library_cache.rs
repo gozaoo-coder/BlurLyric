@@ -1,36 +1,37 @@
+use crate::common::utils;
+use once_cell::sync::Lazy;
 /**
  * Music Library Cache - 本地音乐库缓存模块
- * 
+ *
  * ==================== 模块职责 ====================
- * 
+ *
  * 本模块专门负责本地音乐库的元数据缓存管理：
  * - 缓存本地音乐文件的元数据（歌曲名、艺人、专辑、时长等）
  * - 维护文件指纹用于增量扫描
  * - 管理艺术家和专辑的索引信息
  * - 加速本地音乐库的加载和展示
- * 
+ *
  * ==================== 与 ResourceCache 的区别 ====================
- * 
+ *
  * 本模块（MusicLibraryCache）：
  *   - 缓存内容：本地音乐文件的元数据
  *   - 数据来源：本地文件扫描
  *   - 清理策略：增量扫描时更新
  *   - 用户交互：无感知，自动管理
- * 
+ *
  * ResourceCache 模块：
  *   - 缓存内容：网络下载的音频、图片等资源文件
  *   - 数据来源：网络下载
  *   - 清理策略：LRU 自动清理
  *   - 用户交互：用户可手动管理
- * 
+ *
  * ==================== 存储位置 ====================
- * 
+ *
  * 缓存文件存储在系统缓存目录：
  * - Windows: C:\Users\{用户名}\AppData\Local\com.blurlyric.app\music_library_cache.json
  * - macOS: ~/Library/Caches/com.blurlyric.app/music_library_cache.json
  * - Linux: ~/.cache/com.blurlyric.app/music_library_cache.json
  */
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -38,8 +39,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use once_cell::sync::Lazy;
-use crate::common::utils;
+use tracing::{debug, error, info, warn};
 
 /// 文件指纹信息（用于增量扫描）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,21 +54,22 @@ impl FileFingerprint {
     /// 从文件路径创建指纹
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, String> {
         let path = path.as_ref().to_path_buf();
-        let metadata = fs::metadata(&path)
-            .map_err(|e| format!("Failed to read metadata: {}", e))?;
-        
-        let modified_time = metadata.modified()
+        let metadata =
+            fs::metadata(&path).map_err(|e| format!("Failed to read metadata: {}", e))?;
+
+        let modified_time = metadata
+            .modified()
             .map_err(|e| format!("Failed to get modified time: {}", e))?
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         let size = metadata.len();
-        
+
         // 使用BLAKE3计算文件指纹
         let hash_input = format!("{}:{}:{}", path.display(), modified_time, size);
         let hash = blake3::hash(hash_input.as_bytes()).to_hex().to_string();
-        
+
         Ok(FileFingerprint {
             path,
             modified_time,
@@ -76,7 +77,7 @@ impl FileFingerprint {
             hash,
         })
     }
-    
+
     /// 检查文件是否发生变化
     pub fn is_changed(&self) -> Result<bool, String> {
         let new_fingerprint = FileFingerprint::from_path(&self.path)?;
@@ -100,9 +101,14 @@ pub struct TrackSource {
 
 impl TrackSource {
     pub fn calculate_quality_score(&self) -> u32 {
-        utils::calculate_audio_quality_score(self.bitrate, &self.format, self.sample_rate, self.duration)
+        utils::calculate_audio_quality_score(
+            self.bitrate,
+            &self.format,
+            self.sample_rate,
+            self.duration,
+        )
     }
-    
+
     /// 从元数据创建TrackSource
     pub fn from_metadata(
         id: u32,
@@ -177,8 +183,8 @@ pub struct MusicLibraryCacheData {
     pub artists: Vec<CachedArtist>,
     pub albums: Vec<CachedAlbum>,
     pub file_fingerprints: HashMap<String, FileFingerprint>, // path -> fingerprint
-    pub artist_songs_map: HashMap<u32, Vec<u32>>, // artist_id -> song_ids
-    pub album_songs_map: HashMap<u32, Vec<u32>>, // album_id -> song_ids
+    pub artist_songs_map: HashMap<u32, Vec<u32>>,            // artist_id -> song_ids
+    pub album_songs_map: HashMap<u32, Vec<u32>>,             // album_id -> song_ids
 }
 
 impl MusicLibraryCacheData {
@@ -194,39 +200,36 @@ impl MusicLibraryCacheData {
             album_songs_map: HashMap::new(),
         }
     }
-    
+
     /// 获取需要更新的文件列表
     pub fn get_files_to_update(&self, current_files: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>) {
         let current_paths: std::collections::HashSet<String> = current_files
             .iter()
             .map(|p| p.display().to_string())
             .collect();
-        
-        let cached_paths: std::collections::HashSet<String> = self
-            .file_fingerprints
-            .keys()
-            .cloned()
-            .collect();
-        
+
+        let cached_paths: std::collections::HashSet<String> =
+            self.file_fingerprints.keys().cloned().collect();
+
         // 新增的文件
         let to_add: Vec<PathBuf> = current_paths
             .difference(&cached_paths)
             .filter_map(|p| PathBuf::from(p).canonicalize().ok())
             .collect();
-        
+
         // 删除的文件
         let to_remove: Vec<PathBuf> = cached_paths
             .difference(&current_paths)
             .map(PathBuf::from)
             .collect();
-        
+
         (to_add, to_remove)
     }
-    
+
     /// 检查文件是否需要重新扫描
     pub fn needs_rescan(&self, path: &Path) -> bool {
         let path_str = path.display().to_string();
-        
+
         match self.file_fingerprints.get(&path_str) {
             None => true, // 新文件
             Some(fingerprint) => {
@@ -250,101 +253,145 @@ static MUSIC_LIBRARY_CACHE: Lazy<Mutex<Option<MusicLibraryCache>>> = Lazy::new(|
 impl MusicLibraryCache {
     /// 初始化缓存管理器
     pub fn init() -> Result<(), String> {
+        info!("Initializing music library cache manager");
         let cache_dir = get_library_cache_dir()?;
+        info!("Music library cache directory: {}", cache_dir.display());
+
         let manager = MusicLibraryCache {
             cache_dir,
             memory_cache: Mutex::new(None),
         };
-        
+
         // 尝试加载磁盘缓存到内存
+        info!("Loading music library cache from disk");
         if let Ok(cache) = manager.load_from_disk() {
             *manager.memory_cache.lock().unwrap() = Some(cache);
+            info!("Music library cache loaded successfully");
+        } else {
+            debug!("No existing music library cache found, creating new cache");
         }
-        
+
         *MUSIC_LIBRARY_CACHE.lock().unwrap() = Some(manager);
+        info!("Music library cache manager initialized successfully");
         Ok(())
     }
-    
+
     /// 获取缓存管理器实例
     pub fn instance() -> Option<std::sync::MutexGuard<'static, Option<MusicLibraryCache>>> {
         MUSIC_LIBRARY_CACHE.lock().ok()
     }
-    
+
     /// 获取缓存文件路径
     fn get_cache_file_path(&self) -> PathBuf {
         self.cache_dir.join("music_library_cache.json")
     }
-    
+
     /// 从磁盘加载缓存
     pub fn load_from_disk(&self) -> Result<MusicLibraryCacheData, String> {
         let cache_file = self.get_cache_file_path();
-        
+        debug!("Loading music library cache from: {}", cache_file.display());
+
         if !cache_file.exists() {
+            debug!("Cache file does not exist, returning empty cache");
             return Ok(MusicLibraryCacheData::new());
         }
-        
-        let mut file = fs::File::open(&cache_file)
-            .map_err(|e| format!("Failed to open cache file: {}", e))?;
-        
+
+        let mut file = fs::File::open(&cache_file).map_err(|e| {
+            error!("Failed to open cache file: {}", e);
+            format!("Failed to open cache file: {}", e)
+        })?;
+
         let mut contents = String::new();
-        file.read_to_string(&mut contents)
-            .map_err(|e| format!("Failed to read cache file: {}", e))?;
-        
-        let cache: MusicLibraryCacheData = serde_json::from_str(&contents)
-            .map_err(|e| format!("Failed to parse cache: {}", e))?;
-        
+        file.read_to_string(&mut contents).map_err(|e| {
+            error!("Failed to read cache file: {}", e);
+            format!("Failed to read cache file: {}", e)
+        })?;
+
+        let cache: MusicLibraryCacheData = serde_json::from_str(&contents).map_err(|e| {
+            error!("Failed to parse cache: {}", e);
+            format!("Failed to parse cache: {}", e)
+        })?;
+
+        debug!(
+            "Cache loaded successfully: {} tracks, {} artists, {} albums",
+            cache.songs.len(),
+            cache.artists.len(),
+            cache.albums.len()
+        );
         Ok(cache)
     }
-    
+
     /// 保存缓存到磁盘
     pub fn save_to_disk(&self, cache: &MusicLibraryCacheData) -> Result<(), String> {
         let cache_file = self.get_cache_file_path();
-        
+        debug!("Saving music library cache to: {}", cache_file.display());
+
         // 确保目录存在
         if let Some(parent) = cache_file.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create cache directory: {}", e))?;
+            debug!("Creating cache directory: {}", parent.display());
+            fs::create_dir_all(parent).map_err(|e| {
+                error!("Failed to create cache directory: {}", e);
+                format!("Failed to create cache directory: {}", e)
+            })?;
         }
-        
-        let json = serde_json::to_string_pretty(cache)
-            .map_err(|e| format!("Failed to serialize cache: {}", e))?;
-        
-        let mut file = fs::File::create(&cache_file)
-            .map_err(|e| format!("Failed to create cache file: {}", e))?;
-        
-        file.write_all(json.as_bytes())
-            .map_err(|e| format!("Failed to write cache file: {}", e))?;
-        
+
+        debug!(
+            "Serializing cache: {} tracks, {} artists, {} albums",
+            cache.songs.len(),
+            cache.artists.len(),
+            cache.albums.len()
+        );
+        let json = serde_json::to_string_pretty(cache).map_err(|e| {
+            error!("Failed to serialize cache: {}", e);
+            format!("Failed to serialize cache: {}", e)
+        })?;
+
+        let mut file = fs::File::create(&cache_file).map_err(|e| {
+            error!("Failed to create cache file: {}", e);
+            format!("Failed to create cache file: {}", e)
+        })?;
+
+        file.write_all(json.as_bytes()).map_err(|e| {
+            error!("Failed to write cache file: {}", e);
+            format!("Failed to write cache file: {}", e)
+        })?;
+
+        info!(
+            "Music library cache saved successfully: {} tracks, {} artists, {} albums",
+            cache.songs.len(),
+            cache.artists.len(),
+            cache.albums.len()
+        );
         Ok(())
     }
-    
+
     /// 获取内存缓存
     pub fn get_memory_cache(&self) -> Option<MusicLibraryCacheData> {
         self.memory_cache.lock().unwrap().clone()
     }
-    
+
     /// 更新内存缓存
     pub fn update_memory_cache(&self, cache: MusicLibraryCacheData) {
         *self.memory_cache.lock().unwrap() = Some(cache);
     }
-    
+
     /// 清除所有缓存
     pub fn clear_cache(&self) -> Result<(), String> {
         *self.memory_cache.lock().unwrap() = None;
-        
+
         let cache_file = self.get_cache_file_path();
         if cache_file.exists() {
             fs::remove_file(&cache_file)
                 .map_err(|e| format!("Failed to remove cache file: {}", e))?;
         }
-        
+
         Ok(())
     }
-    
+
     /// 获取缓存统计信息
     pub fn get_cache_stats(&self) -> Result<LibraryCacheStats, String> {
         let cache = self.load_from_disk()?;
-        
+
         Ok(LibraryCacheStats {
             total_songs: cache.songs.len(),
             total_artists: cache.artists.len(),
@@ -441,6 +488,69 @@ pub fn init_cache_manager() -> Result<(), String> {
 }
 
 /// @deprecated 使用 MusicLibraryCache::instance() 代替
-pub fn get_cache_manager_instance() -> Option<std::sync::MutexGuard<'static, Option<MusicLibraryCache>>> {
+pub fn get_cache_manager_instance(
+) -> Option<std::sync::MutexGuard<'static, Option<MusicLibraryCache>>> {
     MusicLibraryCache::instance()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_fingerprint_creation() {
+        let fingerprint = FileFingerprint {
+            path: PathBuf::from("/path/to/test.mp3"),
+            modified_time: 1234567890,
+            size: 1024 * 1024, // 1MB
+            hash: "test-hash".to_string(),
+        };
+
+        assert_eq!(fingerprint.path, PathBuf::from("/path/to/test.mp3"));
+        assert_eq!(fingerprint.modified_time, 1234567890);
+        assert_eq!(fingerprint.size, 1024 * 1024);
+        assert_eq!(fingerprint.hash, "test-hash");
+    }
+
+    #[test]
+    fn test_music_library_cache_data_new() {
+        let cache_data = MusicLibraryCacheData::new();
+
+        assert!(cache_data.songs.is_empty());
+        assert!(cache_data.artists.is_empty());
+        assert!(cache_data.albums.is_empty());
+        assert!(cache_data.file_fingerprints.is_empty());
+    }
+
+    #[test]
+    fn test_music_library_cache_data_add_track() {
+        let mut cache_data = MusicLibraryCacheData::new();
+        let song = CachedSongMetadata {
+            id: 1,
+            name: "Test Track".to_string(),
+            artists: vec!["Test Artist".to_string()],
+            album: "Test Album".to_string(),
+            track_number: 1,
+            lyric: String::new(),
+            fingerprint: FileFingerprint {
+                path: PathBuf::from("/path/to/test.mp3"),
+                modified_time: 1234567890,
+                size: 1024 * 1024,
+                hash: "test-hash".to_string(),
+            },
+            cached_at: 1234567890,
+            primary_source: None,
+            alternative_sources: vec![],
+            duration: Some(180.0),
+            genre: None,
+            year: None,
+            comment: None,
+            composer: None,
+            lyricist: None,
+        };
+
+        cache_data.songs.push(song);
+        assert_eq!(cache_data.songs.len(), 1);
+        assert_eq!(cache_data.songs[0].name, "Test Track");
+    }
 }

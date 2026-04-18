@@ -42,7 +42,8 @@ export class AudioEngine {
     }
 
     set volume(v) {
-        this.#audioElement.volume = Math.max(0, Math.min(1, v));
+        const safeValue = Number.isFinite(v) ? v : 0;
+        this.#audioElement.volume = Math.max(0, Math.min(1, safeValue));
     }
 
     async loadFromTrace(trace) {

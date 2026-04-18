@@ -1,7 +1,7 @@
 //! Track - 单曲数据模型
 
+use crate::core::trace::{BaseModel, Trace, TraceDataType};
 use serde::{Deserialize, Serialize};
-use crate::trace::{Trace, TraceDataType, BaseModel};
 
 /// TrackSourceInfo - 音轨来源信息（简化版，用于前端传输和向后兼容）
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -81,7 +81,7 @@ pub struct Track {
     /// 其他标签信息（键值对）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub other_tags: Option<std::collections::HashMap<String, String>>,
-    
+
     // ========== 向后兼容字段 ==========
     /// 艺术家列表（旧格式，用于前端兼容）
     #[serde(rename = "ar", default)]
@@ -239,24 +239,31 @@ impl Track {
     ) -> Self {
         // 创建 Trace
         let trace = Trace::local_file(&src, TraceDataType::Track, id.to_string());
-        
+
         Track {
             id: id.to_string(),
             name,
             duration,
             track_number: Some(track_number),
             disc_number: None,
-            artists: artists.iter().map(|a| super::ArtistSummup {
-                id: a.id.to_string(),
-                name: a.name.clone(),
-                avatar_url: None,
-                traces: vec![],
-            }).collect(),
+            artists: artists
+                .iter()
+                .map(|a| super::ArtistSummup {
+                    id: a.id.to_string(),
+                    name: a.name.clone(),
+                    avatar_url: None,
+                    traces: vec![],
+                })
+                .collect(),
             album: album.as_ref().map(|a| super::AlbumSummup {
                 id: a.id.to_string(),
                 name: a.name.clone(),
                 artists: vec![],
-                cover_url: if a.pic_url.is_empty() { None } else { Some(a.pic_url.clone()) },
+                cover_url: if a.pic_url.is_empty() {
+                    None
+                } else {
+                    Some(a.pic_url.clone())
+                },
                 traces: vec![],
             }),
             traces: vec![trace],
@@ -272,7 +279,11 @@ impl Track {
             bitrate,
             sample_rate,
             channels,
-            lyrics: if lyric.is_empty() { None } else { Some(lyric.clone()) },
+            lyrics: if lyric.is_empty() {
+                None
+            } else {
+                Some(lyric.clone())
+            },
             other_tags,
             // 向后兼容字段
             ar: artists,

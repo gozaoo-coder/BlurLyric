@@ -5,6 +5,6 @@
 // - deduplication: 歌曲去重与合并
 // - persistence: 数据持久化与应用初始化
 
-pub mod scanner;
 pub mod deduplication;
 pub mod persistence;
+pub mod scanner;

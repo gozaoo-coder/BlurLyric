@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use super::super::models::legacy::{Song, Artist, Album};
+use super::super::models::legacy::{Album, Artist, Song};
 
 // ==================== ID 计数器 ====================
 
@@ -23,25 +23,25 @@ pub static ALBUM_ID_COUNTER: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
 // ==================== 数据缓存 ====================
 
 /// 音乐缓存（按目录路径索引）
-pub static MUSIC_CACHE: Lazy<Mutex<HashMap<PathBuf, Vec<Song>>>> = 
+pub static MUSIC_CACHE: Lazy<Mutex<HashMap<PathBuf, Vec<Song>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// 艺术家缓存（按名称索引）
-pub static ARTIST_CACHE: Lazy<Mutex<HashMap<String, Artist>>> = 
+pub static ARTIST_CACHE: Lazy<Mutex<HashMap<String, Artist>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// 专辑缓存（按名称索引）
-pub static ALBUM_CACHE: Lazy<Mutex<HashMap<String, Album>>> = 
+pub static ALBUM_CACHE: Lazy<Mutex<HashMap<String, Album>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 // ==================== 映射关系 ====================
 
 /// 艺术家到歌曲的映射关系
-pub static ARTIST_SONGS_MAP: Lazy<Mutex<HashMap<u32, Vec<Song>>>> = 
+pub static ARTIST_SONGS_MAP: Lazy<Mutex<HashMap<u32, Vec<Song>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// 专辑到歌曲的映射关系
-pub static ALBUM_SONGS_MAP: Lazy<Mutex<HashMap<u32, Vec<Song>>>> = 
+pub static ALBUM_SONGS_MAP: Lazy<Mutex<HashMap<u32, Vec<Song>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 // ==================== O(1) 索引 ====================
@@ -59,18 +59,15 @@ pub static ARTIST_INDEX: Lazy<Mutex<HashMap<u32, Artist>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// 专辑 ID -> Album 对象的 O(1) 索引
-pub static ALBUM_INDEX: Lazy<Mutex<HashMap<u32, Album>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+pub static ALBUM_INDEX: Lazy<Mutex<HashMap<u32, Album>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 // ==================== 应用配置 ====================
 
 /// 音乐目录列表
-pub static MUSIC_DIRS: Lazy<Mutex<Vec<PathBuf>>> =
-    Lazy::new(|| Mutex::new(Vec::new()));
+pub static MUSIC_DIRS: Lazy<Mutex<Vec<PathBuf>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
 /// 窗口置顶状态
-pub static ALWAYS_ON_TOP_STATE: Lazy<Mutex<bool>> = 
-    Lazy::new(|| Mutex::new(false));
+pub static ALWAYS_ON_TOP_STATE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 // ==================== 辅助函数 ====================
 
@@ -184,10 +181,22 @@ pub fn add_album_cover_index(album_id: u32, path: PathBuf) {
 pub fn rebuild_all_indexes() {
     // 清空所有索引
     {
-        SONG_PATH_INDEX.lock().unwrap_or_else(|e| e.into_inner()).clear();
-        ALBUM_COVER_INDEX.lock().unwrap_or_else(|e| e.into_inner()).clear();
-        ARTIST_INDEX.lock().unwrap_or_else(|e| e.into_inner()).clear();
-        ALBUM_INDEX.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        SONG_PATH_INDEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        ALBUM_COVER_INDEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        ARTIST_INDEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        ALBUM_INDEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     // 重建 SONG_PATH_INDEX 和 ALBUM_COVER_INDEX
@@ -199,7 +208,9 @@ pub fn rebuild_all_indexes() {
         for songs in cache.values() {
             for song in songs {
                 song_index.insert(song.id, song.src.clone());
-                cover_index.entry(song.al.id).or_insert_with(|| song.src.clone());
+                cover_index
+                    .entry(song.al.id)
+                    .or_insert_with(|| song.src.clone());
             }
         }
     }
