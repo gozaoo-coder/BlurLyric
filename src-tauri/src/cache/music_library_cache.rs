@@ -314,7 +314,7 @@ impl MusicLibraryCache {
 
         debug!(
             "Cache loaded successfully: {} tracks, {} artists, {} albums",
-            cache.tracks.len(),
+            cache.songs.len(),
             cache.artists.len(),
             cache.albums.len()
         );
@@ -337,7 +337,7 @@ impl MusicLibraryCache {
 
         debug!(
             "Serializing cache: {} tracks, {} artists, {} albums",
-            cache.tracks.len(),
+            cache.songs.len(),
             cache.artists.len(),
             cache.albums.len()
         );
@@ -358,7 +358,7 @@ impl MusicLibraryCache {
 
         info!(
             "Music library cache saved successfully: {} tracks, {} artists, {} albums",
-            cache.tracks.len(),
+            cache.songs.len(),
             cache.artists.len(),
             cache.albums.len()
         );
@@ -516,7 +516,7 @@ mod tests {
     fn test_music_library_cache_data_new() {
         let cache_data = MusicLibraryCacheData::new();
 
-        assert!(cache_data.tracks.is_empty());
+        assert!(cache_data.songs.is_empty());
         assert!(cache_data.artists.is_empty());
         assert!(cache_data.albums.is_empty());
         assert!(cache_data.file_fingerprints.is_empty());
@@ -525,35 +525,32 @@ mod tests {
     #[test]
     fn test_music_library_cache_data_add_track() {
         let mut cache_data = MusicLibraryCacheData::new();
-        let track = crate::models::Track {
-            id: "test-track-1".to_string(),
-            title: "Test Track".to_string(),
+        let song = CachedSongMetadata {
+            id: 1,
+            name: "Test Track".to_string(),
             artists: vec!["Test Artist".to_string()],
             album: "Test Album".to_string(),
-            album_id: Some("test-album-1".to_string()),
-            duration: 180.0,
-            bitrate: Some(320),
-            sample_rate: Some(44100),
-            format: "mp3".to_string(),
-            size: Some(5 * 1024 * 1024), // 5MB
-            path: Some("/path/to/test.mp3".to_string()),
-            album_cover: None,
-            lyrics: None,
-            release_date: None,
+            track_number: 1,
+            lyric: String::new(),
+            fingerprint: FileFingerprint {
+                path: PathBuf::from("/path/to/test.mp3"),
+                modified_time: 1234567890,
+                size: 1024 * 1024,
+                hash: "test-hash".to_string(),
+            },
+            cached_at: 1234567890,
+            primary_source: None,
+            alternative_sources: vec![],
+            duration: Some(180.0),
             genre: None,
+            year: None,
+            comment: None,
             composer: None,
-            performer: None,
-            conductor: None,
-            disc_number: None,
-            track_number: None,
-            play_count: 0,
-            last_played: None,
-            is_favorite: false,
-            traces: vec![],
+            lyricist: None,
         };
 
-        cache_data.add_track(track);
-        assert_eq!(cache_data.tracks.len(), 1);
-        assert!(cache_data.tracks.contains_key("test-track-1"));
+        cache_data.songs.push(song);
+        assert_eq!(cache_data.songs.len(), 1);
+        assert_eq!(cache_data.songs[0].name, "Test Track");
     }
 }

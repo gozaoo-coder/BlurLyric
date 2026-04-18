@@ -12,16 +12,16 @@ use tracing::{debug, error, info, warn};
 
 use super::scanner::{cache_music_list, parse_music_file, scan_music_files};
 use crate::common::utils;
-use crate::incremental_scanner::IncrementalScanner;
+use crate::core::incremental_scanner::IncrementalScanner;
 use crate::models::legacy::{Album, Artist, Song, TrackSourceInfo};
 use crate::models::Track;
-use crate::music_library_cache::{
+use crate::cache::music_library_cache::{
     CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint,
     MusicLibraryCache as LibraryCacheManager, MusicLibraryCacheData,
 };
-use crate::performance_monitor::{MetricType, PerformanceMonitor};
+use crate::monitor::performance_monitor::{MetricType, PerformanceMonitor};
 use crate::state::*;
-use crate::trace::{ResourceInfo, Trace, TraceDataType};
+use crate::core::trace::{ResourceInfo, Trace, TraceDataType};
 
 /// 应用初始化入口
 ///
@@ -362,7 +362,7 @@ pub fn save_to_persistent_cache() {
 /// # 返回值
 /// 构建好的 MusicLibraryCacheData 对象
 pub fn build_persistent_cache_from_memory() -> MusicLibraryCacheData {
-    use crate::music_library_cache::{
+    use crate::cache::music_library_cache::{
         CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint,
     };
     let now = utils::current_timestamp();
@@ -501,7 +501,7 @@ pub fn perform_background_incremental_scan() {
                         "Background scan found changes, updating cache"
                     );
 
-                    let new_cache = crate::incremental_scanner::build_cache_from_scan(
+                    let new_cache = crate::core::incremental_scanner::build_cache_from_scan(
                         scan_result,
                         Some(&existing_cache),
                     );

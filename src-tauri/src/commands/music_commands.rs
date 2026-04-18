@@ -2,10 +2,10 @@
 //!
 //! 包含音乐列表、艺术家、专辑相关的查询和管理命令
 
-use crate::cache::music_library_cache::MusicLibraryCacheData;
+use crate::cache::music_library_cache::{MusicLibraryCache as LibraryCacheManager, MusicLibraryCacheData};
 use crate::core::incremental_scanner::IncrementalScanner;
 use crate::core::trace::{ResourceInfo, Trace, TraceDataType};
-use crate::models::track::Track;
+use crate::models::Track;
 use crate::monitor::performance_monitor::{MetricType, PerformanceMonitor};
 use crate::music_tag::MetadataParser;
 use std::collections::HashMap;

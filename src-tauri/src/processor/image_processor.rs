@@ -9,7 +9,7 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 
 // 引入GPU图像处理器
-use crate::gpu_image_processor::{
+use crate::processor::gpu_image_processor::{
     init_gpu_processor, resize_with_gpu_fallback, resize_with_gpu_fallback_async,
 };
 

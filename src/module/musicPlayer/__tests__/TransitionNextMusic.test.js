@@ -49,7 +49,7 @@ describe('TransitionStrategy', () => {
         );
     });
 
-    it('应作为可继承的抽象基类使用', () => {
+    it('应作为可继承的抽象基类使用', async () => {
         class CustomStrategy extends TransitionStrategy {
             async execute(player, targetIndex) {
                 return `switched to ${targetIndex}`;
@@ -59,7 +59,7 @@ describe('TransitionStrategy', () => {
         const custom = new CustomStrategy();
         expect(custom).toBeInstanceOf(TransitionStrategy);
         // 子类实现后不应抛出错误
-        expect(custom.execute({}, 5)).resolves.toBe('switched to 5');
+        await expect(custom.execute({}, 5)).resolves.toBe('switched to 5');
     });
 });
 

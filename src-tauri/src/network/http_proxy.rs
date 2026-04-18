@@ -53,6 +53,7 @@ pub async fn execute_request(request: HttpRequest) -> Result<HttpResponse, Strin
         Some("HEAD") => reqwest::Method::HEAD,
         _ => reqwest::Method::GET,
     };
+    let method_str = method.to_string();
 
     let mut req = client.request(method, &request.url);
 
@@ -81,11 +82,11 @@ pub async fn execute_request(request: HttpRequest) -> Result<HttpResponse, Strin
     let ok = response.status().is_success();
 
     if ok {
-        info!("HTTP request successful: {} {}", method, request.url);
+        info!("HTTP request successful: {} {}", method_str, request.url);
     } else {
         warn!(
             "HTTP request failed with status: {} for {} {}",
-            status, method, request.url
+            status, method_str, request.url
         );
     }
 

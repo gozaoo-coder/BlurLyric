@@ -64,7 +64,7 @@ impl GpuImageProcessor {
         // 创建着色器模块
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Resize Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/resize.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/resize.wgsl").into()),
         });
 
         // 创建绑定组布局
