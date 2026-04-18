@@ -54,9 +54,9 @@ pub struct Artist {
     pub id: ArtistID,
     pub name: String,
     #[serde(default)]
-    pub albums: Vec<AlbumID>,
+    pub album_ids: Vec<AlbumID>,
     #[serde(default)]
-    pub songs: Vec<SongID>,
+    pub song_ids: Vec<SongID>,
     #[serde(default)]
     pub traces: Vec<Trace>,
 }
@@ -66,9 +66,9 @@ pub struct Album {
     pub id: AlbumID,
     pub name: String,
     #[serde(default)]
-    pub artists: Vec<Artist>,
+    pub artist_ids: Vec<ArtistID>,
     #[serde(default)]
-    pub songs: Vec<SongID>,
+    pub song_ids: Vec<SongID>,
     #[serde(default)]
     pub traces: Vec<Trace>,
 }
@@ -78,12 +78,33 @@ pub struct Song {
     pub id: SongID,
     pub name: String,
     #[serde(default)]
-    pub artists: Vec<Artist>,
-    pub album: Option<Album>,
+    pub artist_ids: Vec<ArtistID>,
+    pub album_id: Option<AlbumID>,
     #[serde(default)]
     pub traces: Vec<Trace>,
     #[serde(with = "duration_serde", default)]
     pub duration: Option<Duration>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SongWithRelations {
+    pub song: Song,
+    pub artists: Vec<Artist>,
+    pub album: Option<Album>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlbumWithRelations {
+    pub album: Album,
+    pub artists: Vec<Artist>,
+    pub songs: Vec<Song>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtistWithRelations {
+    pub artist: Artist,
+    pub albums: Vec<Album>,
+    pub songs: Vec<Song>,
 }
 
 mod duration_serde {

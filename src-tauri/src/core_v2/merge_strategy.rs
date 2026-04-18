@@ -10,16 +10,11 @@ pub struct StrictMergeStrategy;
 
 impl MergeStrategy for StrictMergeStrategy {
     fn is_same_song(&self, a: &Song, b: &Song) -> bool {
-        a.name == b.name && 
-        a.artists.iter().map(|a| &a.name).collect::<Vec<_>>() == 
-        b.artists.iter().map(|a| &a.name).collect::<Vec<_>>() &&
-        a.album.as_ref().map(|al| &al.name) == b.album.as_ref().map(|al| &al.name)
+        a.name == b.name && a.artist_ids == b.artist_ids && a.album_id == b.album_id
     }
 
     fn is_same_album(&self, a: &Album, b: &Album) -> bool {
-        a.name == b.name && 
-        a.artists.iter().map(|a| &a.name).collect::<Vec<_>>() == 
-        b.artists.iter().map(|a| &a.name).collect::<Vec<_>>()
+        a.name == b.name && a.artist_ids == b.artist_ids
     }
 
     fn is_same_artist(&self, a: &Artist, b: &Artist) -> bool {

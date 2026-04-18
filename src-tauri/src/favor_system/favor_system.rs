@@ -1,7 +1,9 @@
 use std::sync::{Arc, Mutex};
 
+use crate::core_v2::events::LibraryEvent;
 use crate::core_v2::models::SongID;
 use crate::library_manager::MusicStorageSourceLibraryManager;
+use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Playlist {
@@ -22,11 +24,28 @@ pub struct FavorSystem {
 }
 
 impl FavorSystem {
-    pub fn new(library_manager: Arc<Mutex<MusicStorageSourceLibraryManager>>) -> Self {
-        Self {
+    pub fn new(
+        library_manager: Arc<Mutex<MusicStorageSourceLibraryManager>>,
+        mut event_receiver: broadcast::Receiver<LibraryEvent>
+    ) -> Self {
+        let system = Self {
             playlists: Arc::new(Mutex::new(Playlists { lists: Vec::new() })),
             library_manager,
-        }
+        };
+        
+        let playlists_clone = Arc::clone(&system.playlists);
+        tokio::spawn(async move {
+            while let Ok(event) = event_receiver.recv().await {
+                if let LibraryEvent::EntityCleanup { entity_id } = event {
+                    let mut playlists = playlists_clone.lock().unwrap();
+                    for playlist in &mut playlists.lists {
+                        playlist.song_ids.retain(|id| id != &entity_id);
+                    }
+                }
+            }
+        });
+        
+        system
     }
 
     pub fn add_favorite(&self, song_id: SongID) {
@@ -87,12 +106,13 @@ impl FavorSystem {
             playlist.song_ids.retain(|id| id != song_id);
         }
     }
+}
 
-    pub fn handle_entity_cleanup(&self, song_id: &SongID) {
-        let mut playlists = self.playlists.lock().unwrap();
-        for playlist in &mut playlists.lists {
-            if playlist.song_ids.contains(song_id) {
-            }
+impl Clone for FavorSystem {
+    fn clone(&self) -> Self {
+        Self {
+            playlists: Arc::clone(&self.playlists),
+            library_manager: Arc::clone(&self.library_manager),
         }
     }
 }
