@@ -18,6 +18,11 @@ const emit = defineEmits(['toggle', 'close']);
 
 onMounted(() => {
   isTauri.value = !!(window.__TAURI_INTERNALS__);
+  
+  // 检测是否为移动平台
+  if (window.navigator.userAgent.match(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i)) {
+    isTauri.value = false; // 在移动平台上禁用窗口控制
+  }
 });
 
 /**
