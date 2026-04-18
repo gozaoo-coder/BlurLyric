@@ -40,14 +40,14 @@
  * const url = await netease.getTrackResourceUrl('123456');
  */
 
-import { ApiSource } from './api.js';
+import { WebSource } from './web.js';
 import { Trace, TraceDataType, FetchMethodType } from './trace.js';
 
 /**
  * NeteaseCloudMusicApiEnhanced 适配器
- * 继承 ApiSource，实现网易云音乐 API 的具体接口
+ * 继承 WebSource，实现网易云音乐 API 的具体接口
  */
-export class NeteaseSource extends ApiSource {
+export class NeteaseSource extends WebSource {
     /**
      * @param {string} sourceId - 数据源唯一标识（用户自定义）
      * @param {string} sourceName - 数据源显示名称
@@ -160,26 +160,6 @@ export class NeteaseSource extends ApiSource {
             console.error('Failed to search artists:', e);
             return { artists: [], total: 0, hasMore: false };
         }
-    }
-
-    /**
-     * 综合搜索
-     * @param {string} keyword - 搜索关键词
-     * @param {Object} options - 搜索选项
-     * @returns {Promise<{tracks: Array, albums: Array, artists: Array}>}
-     */
-    async searchAll(keyword, options = {}) {
-        const [tracksResult, albumsResult, artistsResult] = await Promise.allSettled([
-            this.searchTracks(keyword, options),
-            this.searchAlbums(keyword, options),
-            this.searchArtists(keyword, options)
-        ]);
-
-        return {
-            tracks: tracksResult.status === 'fulfilled' ? tracksResult.value.tracks : [],
-            albums: albumsResult.status === 'fulfilled' ? albumsResult.value.albums : [],
-            artists: artistsResult.status === 'fulfilled' ? artistsResult.value.artists : []
-        };
     }
 
     // ========== 详情获取实现 ==========
