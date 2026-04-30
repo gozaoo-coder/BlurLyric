@@ -23,25 +23,24 @@ use std::path::Path;
 /// * `Result<MusicMetadata, MusicTagError>` - 元数据或错误
 /// 
 /// # Example
-/// ```rust
-/// use music_tag::read_metadata;
-/// 
-/// let metadata = read_metadata("/path/to/song.mp3")?;
+/// ```ignore
+/// use blurlyric_lib::music_tag::read_metadata;
+/// let metadata = read_metadata("/path/to/song.mp3").unwrap();
 /// println!("Title: {}", metadata.title);
 /// ```
-pub fn read_metadata<P: AsRef<Path>>(path: P) -> crate::music_tag::error::Result<MusicMetadata> {
+pub fn read_metadata<P: AsRef<Path>>(path: P) -> crate::modules::music_tag::error::Result<MusicMetadata> {
     let parser = MetadataParser::new();
     parser.parse(path)
 }
 
 /// 批量读取音乐文件元数据
-/// 
+///
 /// # Arguments
 /// * `paths` - 音乐文件路径列表
-/// 
+///
 /// # Returns
 /// * `Vec<Result<MusicMetadata, MusicTagError>>` - 元数据结果列表
-pub fn read_metadata_batch<P: AsRef<Path>>(paths: &[P]) -> Vec<crate::music_tag::error::Result<MusicMetadata>> {
+pub fn read_metadata_batch<P: AsRef<Path>>(paths: &[P]) -> Vec<crate::modules::music_tag::error::Result<MusicMetadata>> {
     let parser = MetadataParser::new();
     paths.iter()
         .map(|path| parser.parse(path))

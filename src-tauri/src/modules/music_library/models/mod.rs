@@ -1,0 +1,9 @@
+pub mod music_object;
+pub mod trace_link;
+pub mod master_song;
+pub mod master_album;
+pub mod master_artist;
+pub mod source_song;
+pub mod source_album;
+pub mod source_artist;
+pub mod song_full;

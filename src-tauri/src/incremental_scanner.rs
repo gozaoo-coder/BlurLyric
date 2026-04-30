@@ -6,7 +6,7 @@
  */
 
 use crate::cache_manager::{CacheManager, CachedAlbum, CachedArtist, CachedSongMetadata, FileFingerprint, MusicLibraryCache};
-use crate::music_tag::MetadataParser;
+use crate::modules::music_tag::MetadataParser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, DirEntry};

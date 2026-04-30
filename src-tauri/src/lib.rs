@@ -10,8 +10,7 @@ use std::sync::Mutex;
 use tokio::fs as async_fs;
 
 // 引入新的music_tag模块
-mod music_tag;
-use music_tag::MetadataParser;
+use modules::music_tag::MetadataParser;
 
 // 引入图片处理器模块
 mod image_processor;
@@ -37,6 +36,13 @@ use performance_monitor::{PerformanceMonitor, MetricType};
 mod music_deduplicator;
 use music_deduplicator::{MusicDeduplicator, MergedTrack, deduplicate_tracks};
 
+// 引入新的音乐资源架构模块
+mod modules;
+use modules::music_library::manager::MusicStorageSourceLibraryManager;
+use modules::music_library::source::manager::SourceManager;
+use modules::music_library::favor::favor_manager::FavorManager;
+use modules::music_library::migration;
+
 lazy_static! {
     // ID 计数器
     static ref SONG_ID_COUNTER: Mutex<u32> = Mutex::new(0);
@@ -52,6 +58,13 @@ lazy_static! {
     static ref ARTIST_SONGS_MAP: Mutex<HashMap<u32, Vec<Song>>> = Mutex::new(HashMap::new());
     static ref ALBUM_SONGS_MAP: Mutex<HashMap<u32, Vec<Song>>> = Mutex::new(HashMap::new());
     static ref MUSIC_DIRS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+}
+
+// 新的音乐资源架构全局单例
+lazy_static! {
+    static ref LIBRARY_MANAGER: Mutex<Option<modules::music_library::manager::MusicStorageSourceLibraryManager>> = Mutex::new(None);
+    static ref SOURCE_MANAGER: Mutex<Option<modules::music_library::source::manager::SourceManager>> = Mutex::new(None);
+    static ref FAVOR_MANAGER: Mutex<Option<modules::music_library::favor::favor_manager::FavorManager>> = Mutex::new(None);
 }
 
 // 导出音乐目录列表供其他模块使用
@@ -1593,6 +1606,38 @@ fn close_app(window: tauri::Window) {
     window.close().unwrap();
 }
 
+/// 新音乐资源架构测试命令：初始化新库系统
+#[tauri::command]
+fn new_init_library() -> Result<String, String> {
+    let cache_dir = get_cache_dir().map_err(|e| e.to_string())?;
+    let old_cache_path = cache_dir.join("music_library_cache.json");
+    let library_path = cache_dir.join("library.json");
+
+    // 尝试从旧缓存迁移
+    let manager = migration::migrate_from_old_cache(&old_cache_path)
+        .map_err(|e| e.to_string())?;
+
+    // 如果有数据，保存为新格式
+    if !manager.is_empty() {
+        manager.save_to_disk(&library_path).map_err(|e| e.to_string())?;
+    }
+
+    // 存入全局单例
+    if let Ok(mut guard) = LIBRARY_MANAGER.lock() {
+        *guard = Some(manager);
+    }
+
+    Ok("Library initialized".to_string())
+}
+
+/// 新音乐资源架构测试命令：获取歌曲列表
+#[tauri::command]
+fn new_get_music_list() -> Result<Vec<modules::music_library::models::song_full::SongFull>, String> {
+    let guard = LIBRARY_MANAGER.lock().map_err(|e| e.to_string())?;
+    let manager = guard.as_ref().ok_or("Library not initialized")?;
+    Ok(manager.resolve_all_songs())
+}
+
 // Tauri应用入口点
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -1638,6 +1683,9 @@ pub fn run() {
             performance_monitor::record_resource_load,
             performance_monitor::start_performance_timer,
             performance_monitor::end_performance_timer,
+            // 新音乐资源架构测试命令
+            new_init_library,
+            new_get_music_list,
         ])
         .setup(|_app| {
             Ok(())

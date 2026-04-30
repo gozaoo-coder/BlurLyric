@@ -5,7 +5,7 @@
  */
 
 use crate::cache_manager::{CachedSongMetadata, TrackSource};
-use crate::music_tag::AudioFormat;
+use crate::modules::music_tag::AudioFormat;
 use std::collections::HashMap;
 use std::path::Path;
 

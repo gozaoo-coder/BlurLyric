@@ -4,7 +4,8 @@
       "Bash(cargo check *)",
       "Bash(npm run *)",
       "Bash(cargo test *)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(cargo build *)"
     ]
   }
 }
