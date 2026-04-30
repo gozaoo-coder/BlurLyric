@@ -310,6 +310,13 @@ export function createAnimationPipeline({
     }
   }
 
+  /* ══════════ 初始拖拽注册 ══════════ */
+  if (position.value === Position.BOTTOM || position.value === Position.TO_BOTTOM) {
+    cleanups.push(registerBottomDrag(currentToken));
+  } else {
+    cleanups.push(registerTopDrag(currentToken));
+  }
+
   return { toTop, toBottom, destroy };
 }
 

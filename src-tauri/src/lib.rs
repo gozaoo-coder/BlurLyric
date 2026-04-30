@@ -308,6 +308,15 @@ async fn get_album_cover(album_id: String) -> Result<tauri::ipc::Response, Strin
                     }
                 }
             }
+
+            // 回退：从音乐文件自身提取内嵌封面图
+            if let Some(path) = &source_song.details.path {
+                if let Ok(metadata) = modules::music_tag::read_metadata(path) {
+                    if let Some(cover) = metadata.front_cover() {
+                        return Ok(tauri::ipc::Response::new(cover.data.clone()));
+                    }
+                }
+            }
         }
     }
 

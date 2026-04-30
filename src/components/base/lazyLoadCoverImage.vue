@@ -97,32 +97,24 @@ export default {
     },
   },
   watch: {
-    id: {
-      immediate: true, // 初始时立即执行一次处理函数
-      handler(newId, oldId) {
-        if (newId !== oldId && newId >= 0) {
-          this.fadeOutImage();
-
-        }
-      },
+    id(newId, oldId) {
+      // watch 仅处理 id 变更（带淡出动画），初始加载由 mounted 处理
+      if (newId !== oldId && newId != null && newId !== '' && newId !== -2) {
+        this.fadeOutImage();
+      }
     },
   },
   unmounted() {
-    // 组件注销前，销毁ObjectURL
+    // 组件注销前，销毁 ObjectURL
     if (this.objectURL) {
-      // manager.tauri.destroyObjectURL(this.id);
       this.destroyObjectURL();
     }
   },
   mounted() {
-    if (this.id >= 0) {
-      this.fadeOutImage();
+    // mounted 负责首次加载（无淡出延迟），避免与 watch 重复调用
+    if (this.id != null && this.id !== '' && this.id !== -2) {
       this.fetchAlbumCover();
     }
-    // 确保容器占满整个画幅
-    // const container = this.$el.querySelector('.image-container');
-    // container.style.width = '100%';
-    // container.style.height = '100vh'; // 或者根据需要设置为100%
   },
 };
 </script>

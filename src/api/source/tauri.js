@@ -14,6 +14,18 @@ import {
     songFullArrayToTracks, albumFullArrayToAlbums, artistFullArrayToArtists
 } from '../resources/index.js';
 
+/**
+ * 释放旧数据中的可回收资源
+ */
+function releaseOldData(data) {
+    if (!Array.isArray(data)) return;
+    for (const item of data) {
+        if (item && typeof item.releaseResources === 'function') {
+            item.releaseResources();
+        }
+    }
+}
+
 const onCacheUpdateListeners = new Map();
 const appLocalDataCache = {
     musicList: { lastUpdateTimestamp: 0, data: [] },
@@ -24,6 +36,10 @@ const appLocalDataCache = {
 
 const updateAppLocalData = (path, data) => {
     if (appLocalDataCache[path] !== undefined) {
+        // 释放旧资源（仅 Track 对象拥有 releaseResources）
+        if (path === 'musicList') {
+            releaseOldData(appLocalDataCache[path].data);
+        }
         appLocalDataCache[path].data = data;
         appLocalDataCache[path].lastUpdateTimestamp = Date.now();
         onCacheUpdateListeners.get(path)?.forEach(callback => callback(data));
@@ -98,7 +114,9 @@ export class TauriSource extends Source {
     }
 
     async refreshMusicCache() {
-        await invoke("refresh_music_cache");
+        // 刷新前释放旧的封面/音频资源
+        releaseOldData(appLocalDataCache.musicList.data);
+        lazyLoader.clearCache();
 
         // 重新获取所有数据
         let musicList = await invoke("get_music_list");

@@ -52,10 +52,10 @@ export default {
       // }, 6*1000);
     },
     async fetchURL() {
+      if (this.coverId == null || this.coverId === '' || (typeof this.coverId === 'number' && this.coverId < 0)) return;
       if(this.objectURL){
         this.destroyObjectURL()
       }
-      // this.destroyObjectURL()
       const result = await manager.tauri.getAlbumCover(this.coverId);
       const newSrc = result.objectURL;  // 更新ObjectURL
       this.destroyObjectURL = result.destroyObjectURL;
@@ -70,7 +70,7 @@ export default {
     this.destroyObjectURL()
   },
   props: {
-    coverId: Number,
+    coverId: [String, Number],
     musicInfoPagePosition: String,
     // colorData: Object,
     dynamic: Boolean
@@ -88,7 +88,9 @@ export default {
     },
     coverId: {
       handler: function (newid, oldid) {
-        this.fetchURL()
+        if (newid != null && newid !== '' && newid !== -2) {
+          this.fetchURL()
+        }
       }
     }
   }

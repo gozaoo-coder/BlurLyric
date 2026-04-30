@@ -71,117 +71,141 @@ class LazyLoader {
   }
   
   /**
-   * 清除所有缓存
+   * 清除所有缓存（ObjectURL 由各组件自己管理生命周期）
    */
   clearCache() {
     this.#cache.clear();
+    this.#loadingPromises.clear();
   }
   
   /**
    * 加载专辑封面
+   * 缓存原始 ArrayBuffer，每次调用创建新的 ObjectURL，
+   * 避免虚拟滚动等场景下已销毁的 ObjectURL 被复用
    */
   async loadAlbumCover(albumId, maxResolution = 368) {
     const key = this.#getCacheKey(`cover_${maxResolution}`, albumId);
-    
-    if (this.isCached(key)) {
-      console.log(`Cover ${albumId} loaded from cache`);
-      return this.get(key);
+
+    // 检查缓存中的原始数据
+    const cachedRaw = this.isCached(key) ? this.get(key) : null;
+    if (cachedRaw) {
+      const objectURL = URL.createObjectURL(new Blob([cachedRaw]));
+      return {
+        objectURL,
+        destroyObjectURL: () => URL.revokeObjectURL(objectURL)
+      };
     }
-    
+
     // 防止重复请求
     if (this.#loadingPromises.has(key)) {
-      return this.#loadingPromises.get(key);
+      const raw = await this.#loadingPromises.get(key);
+      const objectURL = URL.createObjectURL(new Blob([raw]));
+      return {
+        objectURL,
+        destroyObjectURL: () => URL.revokeObjectURL(objectURL)
+      };
     }
-    
+
     const promise = (async () => {
-      try {
-        const result = await invoke('get_low_quality_album_cover', {
-          albumId,
-          maxResolution
-        });
-        
-        const data = {
-          objectURL: URL.createObjectURL(new Blob([result])) ,
-          destroyObjectURL: () => URL.revokeObjectURL(result.objectURL)
-        };
-        
-        this.set(key, data);
-        return data;
-      } finally {
-        this.#loadingPromises.delete(key);
-      }
+      const result = await invoke('get_low_quality_album_cover', {
+        albumId,
+        maxResolution
+      });
+      // 缓存原始数据
+      this.set(key, result);
+      return result;
     })();
-    
+
     this.#loadingPromises.set(key, promise);
-    return promise;
+    const raw = await promise;
+    this.#loadingPromises.delete(key);
+    const objectURL = URL.createObjectURL(new Blob([raw]));
+    return {
+      objectURL,
+      destroyObjectURL: () => URL.revokeObjectURL(objectURL)
+    };
   }
   
   /**
    * 加载原始专辑封面
+   * 缓存原始 ArrayBuffer，每次调用创建新的 ObjectURL
    */
   async loadOriginAlbumCover(albumId) {
     const key = this.#getCacheKey('cover_origin', albumId);
-    
-    if (this.isCached(key)) {
-      return this.get(key);
+
+    const cachedRaw = this.isCached(key) ? this.get(key) : null;
+    if (cachedRaw) {
+      const objectURL = URL.createObjectURL(new Blob([cachedRaw]));
+      return {
+        objectURL,
+        destroyObjectURL: () => URL.revokeObjectURL(objectURL)
+      };
     }
-    
+
     if (this.#loadingPromises.has(key)) {
-      return this.#loadingPromises.get(key);
+      const raw = await this.#loadingPromises.get(key);
+      const objectURL = URL.createObjectURL(new Blob([raw]));
+      return {
+        objectURL,
+        destroyObjectURL: () => URL.revokeObjectURL(objectURL)
+      };
     }
-    
+
     const promise = (async () => {
-      try {
-        const result = await invoke('get_album_cover', { albumId });
-        
-        const data = {
-          objectURL: URL.createObjectURL(new Blob([result])),
-          destroyObjectURL: () => URL.revokeObjectURL(result.objectURL)
-        };
-        
-        this.set(key, data);
-        return data;
-      } finally {
-        this.#loadingPromises.delete(key);
-      }
+      const result = await invoke('get_album_cover', { albumId });
+      this.set(key, result);
+      return result;
     })();
-    
+
     this.#loadingPromises.set(key, promise);
-    return promise;
+    const raw = await promise;
+    this.#loadingPromises.delete(key);
+    const objectURL = URL.createObjectURL(new Blob([raw]));
+    return {
+      objectURL,
+      destroyObjectURL: () => URL.revokeObjectURL(objectURL)
+    };
   }
   
   /**
    * 加载音乐文件
+   * 缓存原始 ArrayBuffer，每次调用创建新的 ObjectURL
    */
   async loadMusicFile(songId) {
     const key = this.#getCacheKey('music', songId);
-    
-    if (this.isCached(key)) {
-      return this.get(key);
+
+    const cachedRaw = this.isCached(key) ? this.get(key) : null;
+    if (cachedRaw) {
+      const objectURL = URL.createObjectURL(new Blob([cachedRaw]));
+      return {
+        objectURL,
+        destroyObjectURL: () => URL.revokeObjectURL(objectURL)
+      };
     }
-    
+
     if (this.#loadingPromises.has(key)) {
-      return this.#loadingPromises.get(key);
+      const raw = await this.#loadingPromises.get(key);
+      const objectURL = URL.createObjectURL(new Blob([raw]));
+      return {
+        objectURL,
+        destroyObjectURL: () => URL.revokeObjectURL(objectURL)
+      };
     }
-    
+
     const promise = (async () => {
-      try {
-        const result = await invoke('get_music_file', { songId });
-        
-        const data = {
-          objectURL: URL.createObjectURL(new Blob([result])),
-          destroyObjectURL: () => URL.revokeObjectURL(result.objectURL)
-        };
-        
-        this.set(key, data);
-        return data;
-      } finally {
-        this.#loadingPromises.delete(key);
-      }
+      const result = await invoke('get_music_file', { songId });
+      this.set(key, result);
+      return result;
     })();
-    
+
     this.#loadingPromises.set(key, promise);
-    return promise;
+    const raw = await promise;
+    this.#loadingPromises.delete(key);
+    const objectURL = URL.createObjectURL(new Blob([raw]));
+    return {
+      objectURL,
+      destroyObjectURL: () => URL.revokeObjectURL(objectURL)
+    };
   }
   
   /**

@@ -254,7 +254,8 @@ function songFullToTrack(songFull) {
         : { id: null, name: 'Unknown Album', picUrl: '' };
 
     // 取最佳来源作为 src
-    const sources = (songFull.sources || []).map(([trace, ss]) => ({
+    const rawPairs = (songFull.sources || []);
+    const sources = rawPairs.map(([trace, ss]) => ({
         id: ss.id,
         path: ss.details.path || '',
         format: ss.details.format || '',
@@ -263,6 +264,32 @@ function songFullToTrack(songFull) {
         duration: ss.details.duration,
         qualityScore: ss.details.quality ? { unknown: 0, standard: 1, normal: 2, lossless: 3, hires: 4 }[ss.details.quality.toLowerCase()] || 0 : 0,
         fileSize: ss.details.size || 0,
+    }));
+
+    // 保留 Trace 信息（符合 05-接口规范.md Trace 格式）
+    const traces = rawPairs.map(([trace, ss]) => ({
+        sourceType: { type: 'storage', storage: 'local' },
+        sourceId: trace.source_id || 'local',
+        sourceName: '本地音乐库',
+        dataType: 'track',
+        dataId: ss.id,
+        dataUrl: null,
+        baseUrl: null,
+        fetchMethod: { type: 'LocalFile', path: ss.details.path || '' },
+        resourceInfo: {
+            format: ss.details.format || '',
+            bitrate: ss.details.bitrate,
+            sampleRate: ss.details.sample_rate,
+            size: ss.details.size || 0,
+            duration: ss.details.duration,
+        },
+        metadata: {},
+    }));
+
+    // traceItems: 组合 trace + source 用于 TraceResolver
+    const traceItems = rawPairs.map(([trace, ss], i) => ({
+        trace: traces[i],
+        source: sources[i],
     }));
 
     const bestSource = sources[0] || null;
@@ -289,6 +316,8 @@ function songFullToTrack(songFull) {
         otherTags: {},
         other_tags: {},
         sources,
+        traces,
+        traceItems,
         primarySourceIndex: 0,
         primary_source_index: 0,
         sourceCount: sources.length,
@@ -413,6 +442,8 @@ export class Track {
     get channels() { return this.#data.channels ?? null; }
     get otherTags() { return this.#data.otherTags ?? this.#data.other_tags ?? {}; }
     get sources() { return this.#data.sources ?? []; }
+    get traces() { return this.#data.traces ?? []; }
+    get traceItems() { return this.#data.traceItems ?? []; }
     get primarySourceIndex() { return this.#data.primarySourceIndex ?? this.#data.primary_source_index ?? 0; }
     get sourceCount() { return this.#data.sourceCount ?? this.sources.length ?? 1; }
 

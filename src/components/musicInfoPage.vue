@@ -114,7 +114,7 @@ export default {
           elm,
           () => this.audioState.currentTime / this.audioState.duration,
           (info) => {
-            if (info.draging) {
+            if (info.draging && this.audioManager && this.audioManager.audioDom) {
               this.audioManager.audioDom.currentTime = Math.min(
                 info.currentProgress * this.audioState.duration,
                 this.audioState.duration - this.config.audio.audioStreamDuration - 1,
@@ -202,7 +202,7 @@ export default {
           >
             <div class="prev">
               <div class="event">上一首</div>
-              <div class="name">{{ musicTrack[getNextMusicIndex()].name }}</div>
+              <div class="name">{{ musicTrack[getNextMusicIndex()]?.name || '' }}</div>
             </div>
             <div class="currentMusic">
               <div class="name">
@@ -218,7 +218,7 @@ export default {
             <div class="next">
               <div class="event">下一首</div>
               <div v-if="trackState.playMode !== 'randomPlay'" class="name">
-                {{ musicTrack[getNextMusicIndex()].name }}
+                {{ musicTrack[getNextMusicIndex()]?.name || '' }}
               </div>
               <div v-else class="name">随机播放</div>
             </div>
@@ -229,7 +229,7 @@ export default {
             <template #icon><i class="bi bi-skip-start-fill"></i></template>
           </buttom_icon_circleBackground>
           <buttom_icon_circleBackground
-            @click="audioState.playing ? audioManager.pause() : audioManager.play()"
+            @click="audioManager && (audioState.playing ? audioManager.pause() : audioManager.play())"
             class="playButtom"
           >
             <template #icon>
@@ -316,7 +316,7 @@ export default {
               <i class="bi bi-skip-start-fill"></i>
             </button_circle>
             <button_circle
-              @click="audioState.playing ? audioManager.pause() : audioManager.play()"
+              @click="audioManager && (audioState.playing ? audioManager.pause() : audioManager.play())"
               class="playButtom"
             >
               <div style="transform: scale(1.5); transform-origin: 50% 50%;">

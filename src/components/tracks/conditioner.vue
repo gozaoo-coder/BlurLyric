@@ -56,7 +56,7 @@ export default {
         },
         getKeyMethods: {
             type: Array,
-            required: true,
+            required: false,
             default: () => [
                 {
                     id: 1,

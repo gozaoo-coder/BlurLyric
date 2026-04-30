@@ -50,6 +50,11 @@ impl MusicStorageSourceLibraryManager {
             })
             .collect();
 
+        // 过滤掉没有可用音源的歌曲
+        if sources.is_empty() {
+            return None;
+        }
+
         Some(SongFull {
             song: master_song,
             album,
@@ -95,6 +100,11 @@ impl MusicStorageSourceLibraryManager {
             })
             .collect();
 
+        // 过滤掉没有歌曲的专辑
+        if songs.is_empty() {
+            return None;
+        }
+
         Some(AlbumFull {
             album: master_album,
             artists,
@@ -138,6 +148,11 @@ impl MusicStorageSourceLibraryManager {
                     .and_then(|id| self.resolve_song_full(&id))
             })
             .collect();
+
+        // 过滤掉没有歌曲的艺术家
+        if songs.is_empty() {
+            return None;
+        }
 
         Some(ArtistFull {
             artist: master_artist,
