@@ -5,7 +5,9 @@
       "Bash(npm run *)",
       "Bash(cargo test *)",
       "Bash(npx vitest *)",
-      "Bash(cargo build *)"
+      "Bash(cargo build *)",
+      "Bash(cargo metadata *)",
+      "Bash(python3 -c \"import json,sys; m=json.load\\(sys.stdin\\); [print\\(p['name']\\) for p in m['packages']]\")"
     ]
   }
 }

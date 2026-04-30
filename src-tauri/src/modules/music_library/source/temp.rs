@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::collections::VecDeque;
@@ -44,6 +45,10 @@ impl Source for TempStorageSource {
 
     fn source_type(&self) -> SourceType {
         SourceType::Storage
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 
     async fn get_song_file(&self, record: &SourceSong) -> Result<Vec<u8>, String> {

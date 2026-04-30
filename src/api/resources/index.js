@@ -1,6 +1,8 @@
 /**
  * Resource Manager - 资源管理模块
  * 提供大文件资源（专辑图片、音乐文件）的获取、管理与释放
+ *
+ * 也提供后端 SongFull/AlbumFull/ArtistFull 到前端兼容格式的转换
  */
 
 class Resource {
@@ -144,7 +146,7 @@ export class AlbumCoverResource {
 
     async #fetchResource(apiAdapter) {
         const key = `al_${this.#albumId}_${this.#resolution}`;
-        
+
         return new Promise((resolve, reject) => {
             apiAdapter.getAlbumCover(this.#albumId, this.#resolution)
                 .then(result => {
@@ -210,7 +212,7 @@ export class MusicFileResource {
 
     async #fetchResource(apiAdapter) {
         const key = `mf_${this.#songId}`;
-        
+
         return new Promise((resolve, reject) => {
             apiAdapter.getMusicFile(this.#songId)
                 .then(result => {
@@ -239,6 +241,109 @@ export class MusicFileResource {
     }
 }
 
+// ── 数据格式转换 ──────────────────────────────────
+
+/**
+ * 将后端 SongFull 转换为前端兼容的 Track 对象格式
+ */
+function songFullToTrack(songFull) {
+    const song = songFull.song;
+    const artists = (songFull.artists || []).map(a => ({ id: a.id, name: a.name, alias: [] }));
+    const album = songFull.album
+        ? { id: songFull.album.id, name: songFull.album.name, picUrl: '' }
+        : { id: null, name: 'Unknown Album', picUrl: '' };
+
+    // 取最佳来源作为 src
+    const sources = (songFull.sources || []).map(([trace, ss]) => ({
+        id: ss.id,
+        path: ss.details.path || '',
+        format: ss.details.format || '',
+        bitrate: ss.details.bitrate,
+        sampleRate: ss.details.sample_rate,
+        duration: ss.details.duration,
+        qualityScore: ss.details.quality ? { unknown: 0, standard: 1, normal: 2, lossless: 3, hires: 4 }[ss.details.quality.toLowerCase()] || 0 : 0,
+        fileSize: ss.details.size || 0,
+    }));
+
+    const bestSource = sources[0] || null;
+
+    return {
+        id: song.id,
+        name: song.name,
+        ar: artists,
+        al: album,
+        src: bestSource?.path || '',
+        lyric: '',
+        trackNumber: 0,
+        track_number: 0,
+        duration: song.duration_ms ? song.duration_ms / 1000 : null,
+        genre: null,
+        year: null,
+        comment: null,
+        composer: null,
+        lyricist: null,
+        bitrate: bestSource?.bitrate || null,
+        sampleRate: bestSource?.sampleRate || null,
+        sample_rate: bestSource?.sampleRate || null,
+        channels: null,
+        otherTags: {},
+        other_tags: {},
+        sources,
+        primarySourceIndex: 0,
+        primary_source_index: 0,
+        sourceCount: sources.length,
+    };
+}
+
+/**
+ * 将后端 AlbumFull 转换为前端兼容的 Album 对象格式
+ */
+function albumFullToAlbum(albumFull) {
+    return {
+        id: albumFull.album.id,
+        name: albumFull.album.name,
+        picUrl: '',
+        pic_url: '',
+    };
+}
+
+/**
+ * 将后端 ArtistFull 转换为前端兼容的 Artist 对象格式
+ */
+function artistFullToArtist(artistFull) {
+    return {
+        id: artistFull.artist.id,
+        name: artistFull.artist.name,
+        alias: [],
+    };
+}
+
+/**
+ * 将后端 SongFull 数组转换为 Track 对象数组
+ */
+function songFullArrayToTracks(songFullArray) {
+    return (songFullArray || []).map(sf => songFullToTrack(sf));
+}
+
+/**
+ * 将后端 AlbumFull 数组转换为 Album 对象数组
+ */
+function albumFullArrayToAlbums(albumFullArray) {
+    return (albumFullArray || []).map(af => albumFullToAlbum(af));
+}
+
+/**
+ * 将后端 ArtistFull 数组转换为 Artist 对象数组
+ */
+function artistFullArrayToArtists(artistFullArray) {
+    return (artistFullArray || []).map(af => artistFullToArtist(af));
+}
+
+export { songFullToTrack, albumFullToAlbum, artistFullToArtist,
+         songFullArrayToTracks, albumFullArrayToAlbums, artistFullArrayToArtists };
+
+// ── 数据模型类 ────────────────────────────────────
+
 export class Track {
     #data;
     #albumCover;
@@ -252,6 +357,10 @@ export class Track {
 
     static fromRaw(rawData) {
         return new Track(rawData);
+    }
+
+    static fromSongFull(songFull) {
+        return new Track(songFullToTrack(songFull));
     }
 
     get id() {
@@ -282,7 +391,6 @@ export class Track {
         return this.#data.al ? Album.fromRaw(this.#data.al) : null;
     }
 
-    // 新增字段访问器
     get duration() {
         return this.#data.duration ?? null;
     }
@@ -295,54 +403,18 @@ export class Track {
         return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
 
-    get genre() {
-        return this.#data.genre ?? null;
-    }
-
-    get year() {
-        return this.#data.year ?? null;
-    }
-
-    get comment() {
-        return this.#data.comment ?? null;
-    }
-
-    get composer() {
-        return this.#data.composer ?? null;
-    }
-
-    get lyricist() {
-        return this.#data.lyricist ?? null;
-    }
-
-    get bitrate() {
-        return this.#data.bitrate ?? null;
-    }
-
-    get sampleRate() {
-        return this.#data.sampleRate ?? this.#data.sample_rate ?? null;
-    }
-
-    get channels() {
-        return this.#data.channels ?? null;
-    }
-
-    get otherTags() {
-        return this.#data.otherTags ?? this.#data.other_tags ?? {};
-    }
-
-    // 去重合并相关字段
-    get sources() {
-        return this.#data.sources ?? [];
-    }
-
-    get primarySourceIndex() {
-        return this.#data.primarySourceIndex ?? this.#data.primary_source_index ?? 0;
-    }
-
-    get sourceCount() {
-        return this.#data.sourceCount ?? this.sources.length ?? 1;
-    }
+    get genre() { return this.#data.genre ?? null; }
+    get year() { return this.#data.year ?? null; }
+    get comment() { return this.#data.comment ?? null; }
+    get composer() { return this.#data.composer ?? null; }
+    get lyricist() { return this.#data.lyricist ?? null; }
+    get bitrate() { return this.#data.bitrate ?? null; }
+    get sampleRate() { return this.#data.sampleRate ?? this.#data.sample_rate ?? null; }
+    get channels() { return this.#data.channels ?? null; }
+    get otherTags() { return this.#data.otherTags ?? this.#data.other_tags ?? {}; }
+    get sources() { return this.#data.sources ?? []; }
+    get primarySourceIndex() { return this.#data.primarySourceIndex ?? this.#data.primary_source_index ?? 0; }
+    get sourceCount() { return this.#data.sourceCount ?? this.sources.length ?? 1; }
 
     get primarySource() {
         const sources = this.sources;
@@ -362,8 +434,8 @@ export class Track {
 
     async getAlbumCover(apiAdapter, resolution = 368) {
         if (!this.#albumCover) {
-            const albumId = this.#data.al?.id ?? -1;
-            if (albumId < 0) {
+            const albumId = this.#data.al?.id ?? null;
+            if (albumId == null) {
                 return null;
             }
             this.#albumCover = new AlbumCoverResource(albumId, resolution);
@@ -409,21 +481,15 @@ export class Artist {
         return new Artist(rawData);
     }
 
-    get id() {
-        return this.#data.id;
+    static fromArtistFull(artistFull) {
+        return new Artist(artistFullToArtist(artistFull));
     }
 
-    get name() {
-        return this.#data.name;
-    }
+    get id() { return this.#data.id; }
+    get name() { return this.#data.name; }
+    get alias() { return this.#data.alias ?? []; }
 
-    get alias() {
-        return this.#data.alias ?? [];
-    }
-
-    toRaw() {
-        return { ...this.#data };
-    }
+    toRaw() { return { ...this.#data }; }
 
     static fromRawArray(rawArray) {
         return rawArray.map(raw => Artist.fromRaw(raw));
@@ -441,26 +507,20 @@ export class Album {
         return new Album(rawData);
     }
 
-    get id() {
-        return this.#data.id;
+    static fromAlbumFull(albumFull) {
+        return new Album(albumFullToAlbum(albumFull));
     }
 
-    get name() {
-        return this.#data.name;
-    }
-
-    get picUrl() {
-        return this.#data.picUrl ?? this.#data.pic_url ?? '';
-    }
+    get id() { return this.#data.id; }
+    get name() { return this.#data.name; }
+    get picUrl() { return this.#data.picUrl ?? this.#data.pic_url ?? ''; }
 
     async getCover(apiAdapter, resolution = 368) {
         const coverResource = new AlbumCoverResource(this.#data.id, resolution);
         return coverResource.load(apiAdapter);
     }
 
-    toRaw() {
-        return { ...this.#data };
-    }
+    toRaw() { return { ...this.#data }; }
 
     static fromRawArray(rawArray) {
         return rawArray.map(raw => Album.fromRaw(raw));
@@ -476,17 +536,9 @@ export class TrackList {
         this.#currentIndex = 0;
     }
 
-    get tracks() {
-        return this.#tracks;
-    }
-
-    get length() {
-        return this.#tracks.length;
-    }
-
-    get currentIndex() {
-        return this.#currentIndex;
-    }
+    get tracks() { return this.#tracks; }
+    get length() { return this.#tracks.length; }
+    get currentIndex() { return this.#currentIndex; }
 
     get currentTrack() {
         return this.#tracks[this.#currentIndex] ?? null;
@@ -549,3 +601,4 @@ export class TrackList {
 }
 
 export { Resource, ResourcePool };
+

@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::path::PathBuf;
 use async_trait::async_trait;
 use crate::modules::music_library::source::{Source, SourceType};
@@ -17,10 +18,18 @@ impl LocalStorageSource {
     pub fn add_path(&mut self, path: PathBuf) {
         self.0.add_path(path);
     }
+
+    /// 获取内部 StorageSource 的可变引用
+    pub fn storage_mut(&mut self) -> &mut StorageSource {
+        &mut self.0
+    }
 }
 
 #[async_trait]
 impl Source for LocalStorageSource {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
     fn id(&self) -> &str {
         &self.0.id
     }

@@ -1,20 +1,49 @@
 use std::path::Path;
-use std::fs;
+use std::collections::HashMap;
 use crate::modules::music_tag::types::*;
 use crate::modules::music_tag::error::*;
-use super::MetadataParser;
+use super::{MetadataParser, read_head, PROGRESSIVE_SCAN_SIZE};
 
 impl MetadataParser {
+    /// 渐进式扫描 FLAC 元数据：先读头部 32KB，
+    /// 若所有元数据块均在该范围内则直接解析；
+    /// 否则回退到全量读取（罕见，如超大内嵌封面）。
     pub(super) fn parse_flac(&self, path: &Path) -> Result<MusicMetadata> {
-        let data = fs::read(path)
-            .map_err(|e| io_error(path, e.to_string()))?;
+        let head = read_head(path, PROGRESSIVE_SCAN_SIZE)?;
 
-        if data.len() < 4 || &data[0..4] != b"fLaC" {
+        if head.len() < 4 || &head[0..4] != b"fLaC" {
             return Err(parse_error(path, "无效的FLAC文件"));
         }
 
+        // 快速预检：所有元数据块是否都在 32KB 范围内
         let mut pos = 4;
-        let mut comments: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut all_fit = true;
+        'check: while pos < head.len() {
+            if pos + 4 > head.len() { all_fit = false; break; }
+            let is_last = (head[pos] & 0x80) != 0;
+            let block_size = ((head[pos + 1] as usize) << 16)
+                | ((head[pos + 2] as usize) << 8)
+                | (head[pos + 3] as usize);
+            pos += 4;
+            if pos + block_size > head.len() { all_fit = false; break 'check; }
+            pos += block_size;
+            if is_last { break; }
+        }
+
+        if all_fit {
+            self.parse_flac_data(&head, path)
+        } else {
+            // 元数据超出 32KB 回退到全量读取
+            let full = std::fs::read(path)
+                .map_err(|e| io_error(path, e.to_string()))?;
+            self.parse_flac_data(&full, path)
+        }
+    }
+
+    /// 从内存数据中解析 FLAC 元数据块
+    fn parse_flac_data(&self, data: &[u8], path: &Path) -> Result<MusicMetadata> {
+        let mut pos = 4;
+        let mut comments: HashMap<String, String> = HashMap::new();
         let mut pictures: Vec<Picture> = Vec::new();
 
         while pos < data.len() {

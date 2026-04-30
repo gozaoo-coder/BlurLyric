@@ -36,6 +36,11 @@ impl SourceManager {
         self.sources.get(id).map(|s| s.as_ref())
     }
 
+    /// 获取 Source 可变引用
+    pub fn get_mut(&mut self, id: &str) -> Option<&mut (dyn Source + '_)> {
+        self.sources.get_mut(id).map(|s| s.as_mut() as &mut (dyn Source + '_))
+    }
+
     /// 获取所有 Source
     pub fn get_all(&self) -> Vec<&dyn Source> {
         self.sources.values().map(|s| s.as_ref()).collect()

@@ -1,20 +1,47 @@
 use std::path::Path;
-use std::fs;
+use std::io::Read;
 use crate::modules::music_tag::types::*;
 use crate::modules::music_tag::error::*;
-use super::MetadataParser;
+use super::{MetadataParser, read_head, read_tail, PROGRESSIVE_SCAN_SIZE};
 
 impl MetadataParser {
+    /// 渐进式扫描 MP3 元数据：先读头部 32KB 解析 ID3v2，
+    /// 若标签超出则精准读取剩余部分；否则仅读尾部 128B 尝试 ID3v1。
     pub(super) fn parse_mp3(&self, path: &Path) -> Result<MusicMetadata> {
-        let data = fs::read(path)
-            .map_err(|e| io_error(path, e.to_string()))?;
+        let head = read_head(path, PROGRESSIVE_SCAN_SIZE)?;
 
-        if let Some(metadata) = self.parse_id3v2(&data, path) {
-            return Ok(metadata);
+        // 尝试 ID3v2（位于文件头部）
+        if head.len() >= 10 && &head[0..3] == b"ID3" {
+            let size = ((head[6] as usize) << 21)
+                | ((head[7] as usize) << 14)
+                | ((head[8] as usize) << 7)
+                | (head[9] as usize);
+
+            let tag_end = 10 + size;
+            let data = if tag_end > head.len() {
+                // ID3v2 标签大于 32KB（例如内嵌大尺寸封面），精准读取完整标签
+                let mut buf = vec![0u8; tag_end];
+                let mut file = std::fs::File::open(path)
+                    .map_err(|e| io_error(path, e.to_string()))?;
+                file.read_exact(&mut buf)
+                    .map_err(|e| io_error(path, e.to_string()))?;
+                buf
+            } else {
+                head
+            };
+
+            if let Some(metadata) = self.parse_id3v2(&data, path) {
+                return Ok(metadata);
+            }
         }
 
-        if let Some(metadata) = self.parse_id3v1(&data, path) {
-            return Ok(metadata);
+        // 尝试 ID3v1（位于文件末尾 128 字节）
+        if let Ok(tail) = read_tail(path, 128) {
+            if tail.len() >= 128 && &tail[0..3] == b"TAG" {
+                if let Some(metadata) = self.parse_id3v1(&tail, path) {
+                    return Ok(metadata);
+                }
+            }
         }
 
         let title = path.file_stem()
