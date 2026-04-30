@@ -32,7 +32,7 @@ fn test_library_manager_initialization() {
 #[test]
 fn test_library_manager_register_song() {
     let (tx, _) = create_event_channel();
-    let mut manager = MusicStorageSourceLibraryManager::new(tx);
+    let manager = MusicStorageSourceLibraryManager::new(tx);
 
     let song = Song {
         id: "song1".to_string(),
@@ -55,7 +55,7 @@ fn test_library_manager_register_song() {
 #[test]
 fn test_library_manager_register_album() {
     let (tx, _) = create_event_channel();
-    let mut manager = MusicStorageSourceLibraryManager::new(tx);
+    let manager = MusicStorageSourceLibraryManager::new(tx);
 
     let album = Album {
         id: "album1".to_string(),
@@ -88,7 +88,7 @@ fn test_library_manager_register_album() {
 #[test]
 fn test_library_manager_register_artist() {
     let (tx, _) = create_event_channel();
-    let mut manager = MusicStorageSourceLibraryManager::new(tx);
+    let manager = MusicStorageSourceLibraryManager::new(tx);
 
     let artist = Artist {
         id: "artist1".to_string(),
@@ -119,7 +119,7 @@ fn test_library_manager_register_artist() {
 #[test]
 fn test_library_manager_get_song_with_relations() {
     let (tx, _) = create_event_channel();
-    let mut manager = MusicStorageSourceLibraryManager::new(tx);
+    let manager = MusicStorageSourceLibraryManager::new(tx);
 
     let artist = Artist {
         id: "artist1".to_string(),
@@ -180,7 +180,7 @@ fn test_library_manager_get_song_with_relations() {
 #[test]
 fn test_library_manager_unregister_source_traces() {
     let (tx, _) = create_event_channel();
-    let mut manager = MusicStorageSourceLibraryManager::new(tx);
+    let manager = MusicStorageSourceLibraryManager::new(tx);
 
     let song = Song {
         id: "song1".to_string(),

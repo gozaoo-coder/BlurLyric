@@ -54,15 +54,6 @@
               {{ item.path.call({ line, line_index, item, index }) }}
             </span>
 
-            <!-- 艺人列表类型 -->
-            <div v-if="item.type === 'artists'" class="artists-container">
-              <span
-                v-for="(artist, artistIndex) in item.path.call({ line, line_index, item, index })"
-                :key="artistIndex"
-                class="artist-tag"
-              >{{ artist.name }}</span>
-            </div>
-
             <!-- 图片类型 -->
             <lazy-load-cover-image-vue
               v-if="item.type === 'image' && shouldRenderImage(line_index)"
@@ -142,28 +133,6 @@
   overflow: hidden;
   align-items: center;
   white-space: nowrap;
-}
-
-.artists-container {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 4px;
-  overflow: hidden;
-  max-width: 100%;
-}
-
-.artist-tag {
-  font-size: 0.85em;
-  color: var(--fontColor-content-unimportant);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.artist-tag:not(:last-child)::after {
-  content: '/';
-  margin-left: 4px;
-  color: var(--fontColor-content-moreUnimportant);
 }
 </style>
 

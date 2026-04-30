@@ -10,7 +10,7 @@
 <script>
 import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
-import { ref, computed, onMounted, onUnmounted, watch, nextTick, getCurrentInstance } from 'vue';
+import { ref, computed, onMounted, watch, nextTick, getCurrentInstance } from 'vue';
 import 'tippy.js/animations/scale-subtle.css';
 
 export default {
@@ -134,18 +134,17 @@ export default {
             });
         });
 
-        onUnmounted(() => {
-            if (tippyInstance.value) {
-                tippyInstance.value.destroy();
-                tippyInstance.value = null;
-            }
-        });
-
         return {
             triggerRef,
             contentRef,
         };
     },
+    beforeUnmount() {
+        if (tippyInstance.value) {
+            tippyInstance.value.destroy();
+            tippyInstance.value = null;
+        }
+    }
 };
 </script>
 

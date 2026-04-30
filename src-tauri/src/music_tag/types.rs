@@ -1,8 +1,9 @@
 /**
  * MusicTag Rust模块 - 类型定义
- *
+ * 
  * 定义音乐元数据相关的所有数据结构
  */
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -104,35 +105,6 @@ pub enum PictureType {
     Illustration = 0x12,
     BandLogotype = 0x13,
     PublisherLogotype = 0x14,
-}
-
-impl From<u8> for PictureType {
-    fn from(value: u8) -> Self {
-        match value {
-            0x00 => PictureType::Other,
-            0x01 => PictureType::FileIcon,
-            0x02 => PictureType::OtherFileIcon,
-            0x03 => PictureType::FrontCover,
-            0x04 => PictureType::BackCover,
-            0x05 => PictureType::LeafletPage,
-            0x06 => PictureType::Media,
-            0x07 => PictureType::LeadArtist,
-            0x08 => PictureType::Artist,
-            0x09 => PictureType::Conductor,
-            0x0A => PictureType::Band,
-            0x0B => PictureType::Composer,
-            0x0C => PictureType::Lyricist,
-            0x0D => PictureType::RecordingLocation,
-            0x0E => PictureType::DuringRecording,
-            0x0F => PictureType::DuringPerformance,
-            0x10 => PictureType::VideoScreenCapture,
-            0x11 => PictureType::Fish,
-            0x12 => PictureType::Illustration,
-            0x13 => PictureType::BandLogotype,
-            0x14 => PictureType::PublisherLogotype,
-            _ => PictureType::Other,
-        }
-    }
 }
 
 /// 图片数据
@@ -312,7 +284,11 @@ pub struct MusicMetadata {
 
 impl MusicMetadata {
     /// 创建新的元数据结构
-    pub fn new(title: impl Into<String>, artists: Vec<Artist>, album: Album) -> Self {
+    pub fn new(
+        title: impl Into<String>,
+        artists: Vec<Artist>,
+        album: Album,
+    ) -> Self {
         Self {
             title: title.into(),
             artists,
@@ -338,17 +314,14 @@ impl MusicMetadata {
 
     /// 获取主封面图片
     pub fn front_cover(&self) -> Option<&Picture> {
-        self.pictures
-            .as_ref()?
-            .iter()
+        self.pictures.as_ref()?.iter()
             .find(|p| p.picture_type == PictureType::FrontCover)
             .or_else(|| self.pictures.as_ref()?.first())
     }
 
     /// 获取艺术家名称字符串（逗号分隔）
     pub fn artists_string(&self) -> String {
-        self.artists
-            .iter()
+        self.artists.iter()
             .map(|a| a.name.as_str())
             .collect::<Vec<_>>()
             .join(", ")
@@ -356,8 +329,7 @@ impl MusicMetadata {
 
     /// 检查是否有封面图片
     pub fn has_cover(&self) -> bool {
-        self.pictures
-            .as_ref()
+        self.pictures.as_ref()
             .map(|p| !p.is_empty())
             .unwrap_or(false)
     }

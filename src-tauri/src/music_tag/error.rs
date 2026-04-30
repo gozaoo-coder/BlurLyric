@@ -1,8 +1,9 @@
 /**
  * MusicTag Rust模块 - 错误处理
- *
+ * 
  * 定义模块中使用的所有错误类型
  */
+
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
@@ -11,19 +12,38 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub enum MusicTagError {
     /// IO错误
-    Io { path: PathBuf, message: String },
+    Io {
+        path: PathBuf,
+        message: String,
+    },
     /// 不支持的格式
-    UnsupportedFormat { path: PathBuf, format: String },
+    UnsupportedFormat {
+        path: PathBuf,
+        format: String,
+    },
     /// 解析错误
-    ParseError { path: PathBuf, message: String },
+    ParseError {
+        path: PathBuf,
+        message: String,
+    },
     /// 无效的元数据
-    InvalidMetadata { field: String, message: String },
+    InvalidMetadata {
+        field: String,
+        message: String,
+    },
     /// 文件不存在
-    FileNotFound { path: PathBuf },
+    FileNotFound {
+        path: PathBuf,
+    },
     /// 编码错误
-    EncodingError { encoding: String, message: String },
+    EncodingError {
+        encoding: String,
+        message: String,
+    },
     /// 其他错误
-    Other { message: String },
+    Other {
+        message: String,
+    },
 }
 
 impl fmt::Display for MusicTagError {
