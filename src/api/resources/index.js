@@ -1,61 +1,10 @@
 /**
  * Resource Manager - 资源管理模块
- * 
  * 提供大文件资源（专辑图片、音乐文件）的获取、管理与释放
- * 
- * ==================== 核心概念 ====================
- * 
- * 1. Trace 来源追踪机制
- *    - 所有数据模型（Track/Artist/Album）都支持 Trace 来源追踪
- *    - Trace 记录数据的来源信息（本地/API/WebDAV）
- *    - 通过 Trace 可以精准跳转和获取资源
- * 
- * 2. 统一的数据模型
- *    - Track: 单曲数据模型
- *    - Artist: 艺术家数据模型
- *    - Album: 专辑数据模型
- *    - TrackList: 歌曲列表模型
- * 
- * 3. 资源获取流程
- *    用户请求 → Trace.fetchMethod → IPC → 缓存检查 → 下载/读取 → ObjectURL
- * 
- * ==================== 使用规范 ====================
- * 
- * // 创建 Track
- * const track = Track.fromRaw(trackData);
- * 
- * // 获取 Trace 信息
- * const traces = track.traces;           // 所有来源
- * const primaryTrace = track.primaryTrace; // 主来源
- * 
- * // 检查来源类型
- * if (track.hasLocalResource()) { ... }
- * const apiTrace = track.getTraceBySourceType('api');
- * 
- * // 获取资源
- * const musicFile = await track.getMusicFile(apiAdapter);
- * const albumCover = await track.getAlbumCover(apiAdapter, 368);
- * 
- * // 跳转到关联数据
- * const artist = track.navigateToArtist(0);
- * const album = track.navigateToAlbum();
- * 
- * // 释放资源
- * track.releaseResources();
- * 
- * ==================== 合规说明 ====================
- * 
- * - 不硬编码任何具体音乐平台名称
- * - 通过 sourceId 和 baseUrl 标识来源
- * - 用户自行负责所接入 API 的合法性
+ *
+ * 也提供后端 SongFull/AlbumFull/ArtistFull 到前端兼容格式的转换
  */
 
-import { Trace, TraceDataType } from '../source/trace.js';
-
-/**
- * Resource - 资源基类
- * 实现引用计数和自动释放
- */
 class Resource {
     #id;
     #objectURL;
@@ -105,10 +54,6 @@ class Resource {
     }
 }
 
-/**
- * ResourcePool - 资源池
- * 实现 LRU 淘汰策略
- */
 class ResourcePool {
     #resources = new Map();
     #maxSize;
@@ -158,9 +103,6 @@ class ResourcePool {
     }
 }
 
-/**
- * AlbumCoverResource - 专辑封面资源
- */
 export class AlbumCoverResource {
     #albumId;
     #resolution;
@@ -204,7 +146,7 @@ export class AlbumCoverResource {
 
     async #fetchResource(apiAdapter) {
         const key = `al_${this.#albumId}_${this.#resolution}`;
-        
+
         return new Promise((resolve, reject) => {
             apiAdapter.getAlbumCover(this.#albumId, this.#resolution)
                 .then(result => {
@@ -233,9 +175,6 @@ export class AlbumCoverResource {
     }
 }
 
-/**
- * MusicFileResource - 音乐文件资源
- */
 export class MusicFileResource {
     #songId;
     #resource;
@@ -273,7 +212,7 @@ export class MusicFileResource {
 
     async #fetchResource(apiAdapter) {
         const key = `mf_${this.#songId}`;
-        
+
         return new Promise((resolve, reject) => {
             apiAdapter.getMusicFile(this.#songId)
                 .then(result => {
@@ -302,41 +241,156 @@ export class MusicFileResource {
     }
 }
 
+// ── 数据格式转换 ──────────────────────────────────
+
 /**
- * Track - 单曲数据模型
- * 支持 Trace 来源追踪
+ * 将后端 SongFull 转换为前端兼容的 Track 对象格式
  */
+function songFullToTrack(songFull) {
+    const song = songFull.song;
+    const artists = (songFull.artists || []).map(a => ({ id: a.id, name: a.name, alias: [] }));
+    const album = songFull.album
+        ? { id: songFull.album.id, name: songFull.album.name, picUrl: '' }
+        : { id: null, name: 'Unknown Album', picUrl: '' };
+
+    // 取最佳来源作为 src
+    const rawPairs = (songFull.sources || []);
+    const sources = rawPairs.map(([trace, ss]) => ({
+        id: ss.id,
+        path: ss.details.path || '',
+        format: ss.details.format || '',
+        bitrate: ss.details.bitrate,
+        sampleRate: ss.details.sample_rate,
+        duration: ss.details.duration,
+        qualityScore: ss.details.quality ? { unknown: 0, standard: 1, normal: 2, lossless: 3, hires: 4 }[ss.details.quality.toLowerCase()] || 0 : 0,
+        fileSize: ss.details.size || 0,
+    }));
+
+    // 保留 Trace 信息（符合 05-接口规范.md Trace 格式）
+    const traces = rawPairs.map(([trace, ss]) => ({
+        sourceType: { type: 'storage', storage: 'local' },
+        sourceId: trace.source_id || 'local',
+        sourceName: '本地音乐库',
+        dataType: 'track',
+        dataId: ss.id,
+        dataUrl: null,
+        baseUrl: null,
+        fetchMethod: { type: 'LocalFile', path: ss.details.path || '' },
+        resourceInfo: {
+            format: ss.details.format || '',
+            bitrate: ss.details.bitrate,
+            sampleRate: ss.details.sample_rate,
+            size: ss.details.size || 0,
+            duration: ss.details.duration,
+        },
+        metadata: {},
+    }));
+
+    // traceItems: 组合 trace + source 用于 TraceResolver
+    const traceItems = rawPairs.map(([trace, ss], i) => ({
+        trace: traces[i],
+        source: sources[i],
+    }));
+
+    const bestSource = sources[0] || null;
+
+    return {
+        id: song.id,
+        name: song.name,
+        ar: artists,
+        al: album,
+        src: bestSource?.path || '',
+        lyric: '',
+        trackNumber: 0,
+        track_number: 0,
+        duration: song.duration_ms ? song.duration_ms / 1000 : null,
+        genre: null,
+        year: null,
+        comment: null,
+        composer: null,
+        lyricist: null,
+        bitrate: bestSource?.bitrate || null,
+        sampleRate: bestSource?.sampleRate || null,
+        sample_rate: bestSource?.sampleRate || null,
+        channels: null,
+        otherTags: {},
+        other_tags: {},
+        sources,
+        traces,
+        traceItems,
+        primarySourceIndex: 0,
+        primary_source_index: 0,
+        sourceCount: sources.length,
+    };
+}
+
+/**
+ * 将后端 AlbumFull 转换为前端兼容的 Album 对象格式
+ */
+function albumFullToAlbum(albumFull) {
+    return {
+        id: albumFull.album.id,
+        name: albumFull.album.name,
+        picUrl: '',
+        pic_url: '',
+    };
+}
+
+/**
+ * 将后端 ArtistFull 转换为前端兼容的 Artist 对象格式
+ */
+function artistFullToArtist(artistFull) {
+    return {
+        id: artistFull.artist.id,
+        name: artistFull.artist.name,
+        alias: [],
+    };
+}
+
+/**
+ * 将后端 SongFull 数组转换为 Track 对象数组
+ */
+function songFullArrayToTracks(songFullArray) {
+    return (songFullArray || []).map(sf => songFullToTrack(sf));
+}
+
+/**
+ * 将后端 AlbumFull 数组转换为 Album 对象数组
+ */
+function albumFullArrayToAlbums(albumFullArray) {
+    return (albumFullArray || []).map(af => albumFullToAlbum(af));
+}
+
+/**
+ * 将后端 ArtistFull 数组转换为 Artist 对象数组
+ */
+function artistFullArrayToArtists(artistFullArray) {
+    return (artistFullArray || []).map(af => artistFullToArtist(af));
+}
+
+export { songFullToTrack, albumFullToAlbum, artistFullToArtist,
+         songFullArrayToTracks, albumFullArrayToAlbums, artistFullArrayToArtists };
+
+// ── 数据模型类 ────────────────────────────────────
+
 export class Track {
     #data;
     #albumCover;
     #musicFile;
-    #traces;
 
     constructor(trackData) {
         this.#data = trackData;
         this.#albumCover = null;
         this.#musicFile = null;
-        // 解析 Trace 数据
-        this.#traces = (trackData.traces || []).map(t => 
-            t instanceof Trace ? t : Trace.fromRaw(t)
-        );
     }
 
-    /**
-     * 从原始数据创建 Track
-     */
     static fromRaw(rawData) {
         return new Track(rawData);
     }
 
-    /**
-     * 从原始数据数组创建 Track 数组
-     */
-    static fromRawArray(rawArray) {
-        return rawArray.map(raw => Track.fromRaw(raw));
+    static fromSongFull(songFull) {
+        return new Track(songFullToTrack(songFull));
     }
-
-    // ========== 基本属性 ==========
 
     get id() {
         return this.#data.id;
@@ -366,8 +420,6 @@ export class Track {
         return this.#data.al ? Album.fromRaw(this.#data.al) : null;
     }
 
-    // ========== 扩展属性 ==========
-
     get duration() {
         return this.#data.duration ?? null;
     }
@@ -380,129 +432,41 @@ export class Track {
         return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
 
-    get genre() {
-        return this.#data.genre ?? null;
+    get genre() { return this.#data.genre ?? null; }
+    get year() { return this.#data.year ?? null; }
+    get comment() { return this.#data.comment ?? null; }
+    get composer() { return this.#data.composer ?? null; }
+    get lyricist() { return this.#data.lyricist ?? null; }
+    get bitrate() { return this.#data.bitrate ?? null; }
+    get sampleRate() { return this.#data.sampleRate ?? this.#data.sample_rate ?? null; }
+    get channels() { return this.#data.channels ?? null; }
+    get otherTags() { return this.#data.otherTags ?? this.#data.other_tags ?? {}; }
+    get sources() { return this.#data.sources ?? []; }
+    get traces() { return this.#data.traces ?? []; }
+    get traceItems() { return this.#data.traceItems ?? []; }
+    get primarySourceIndex() { return this.#data.primarySourceIndex ?? this.#data.primary_source_index ?? 0; }
+    get sourceCount() { return this.#data.sourceCount ?? this.sources.length ?? 1; }
+
+    get primarySource() {
+        const sources = this.sources;
+        const index = this.primarySourceIndex;
+        return sources[index] ?? sources[0] ?? null;
     }
 
-    get year() {
-        return this.#data.year ?? null;
+    get alternativeSources() {
+        const sources = this.sources;
+        const primaryIndex = this.primarySourceIndex;
+        return sources.filter((_, index) => index !== primaryIndex);
     }
 
-    get comment() {
-        return this.#data.comment ?? null;
+    hasMultipleSources() {
+        return this.sourceCount > 1;
     }
-
-    get composer() {
-        return this.#data.composer ?? null;
-    }
-
-    get lyricist() {
-        return this.#data.lyricist ?? null;
-    }
-
-    get bitrate() {
-        return this.#data.bitrate ?? null;
-    }
-
-    get sampleRate() {
-        return this.#data.sampleRate ?? this.#data.sample_rate ?? null;
-    }
-
-    get channels() {
-        return this.#data.channels ?? null;
-    }
-
-    get otherTags() {
-        return this.#data.otherTags ?? this.#data.other_tags ?? {};
-    }
-
-    // ========== Trace 来源追踪属性（统一接口）==========
-
-    /**
-     * 获取所有 Trace
-     * @returns {Trace[]}
-     */
-    get traces() {
-        return this.#traces;
-    }
-
-    /**
-     * 获取主 Trace 索引
-     * @returns {number}
-     */
-    get primaryTraceIndex() {
-        return this.#data.primary_trace_index ?? this.#data.primaryTraceIndex ?? 0;
-    }
-
-    /**
-     * 获取主 Trace
-     * @returns {Trace|null}
-     */
-    get primaryTrace() {
-        return this.#traces[this.primaryTraceIndex] || null;
-    }
-
-    /**
-     * 检查是否有本地资源
-     * @returns {boolean}
-     */
-    hasLocalResource() {
-        return this.#traces.some(t => t.isLocal());
-    }
-
-    /**
-     * 检查是否有多个来源
-     * @returns {boolean}
-     */
-    hasMultipleTraces() {
-        return this.#traces.length > 1;
-    }
-
-    /**
-     * 根据来源类型获取 Trace
-     * @param {string} sourceType - 来源类型 ('local' | 'webdav' | 'api')
-     * @returns {Trace|null}
-     */
-    getTraceBySourceType(sourceType) {
-        return this.#traces.find(t => {
-            if (sourceType === 'local') return t.isLocal();
-            if (sourceType === 'webdav') return t.isWebDAV();
-            if (sourceType === 'api') return t.isApi();
-            return false;
-        }) || null;
-    }
-
-    /**
-     * 跳转到艺人页面
-     * @param {number} artistIndex - 艺人索引
-     * @returns {Artist|null}
-     */
-    navigateToArtist(artistIndex) {
-        const artist = this.artists[artistIndex];
-        if (artist && artist.primaryTrace) {
-            return artist;
-        }
-        return artist || null;
-    }
-
-    /**
-     * 跳转到专辑页面
-     * @returns {Album|null}
-     */
-    navigateToAlbum() {
-        const album = this.album;
-        if (album && album.primaryTrace) {
-            return album;
-        }
-        return album || null;
-    }
-
-    // ========== 资源获取（统一调用方法）==========
 
     async getAlbumCover(apiAdapter, resolution = 368) {
         if (!this.#albumCover) {
-            const albumId = this.#data.al?.id ?? -1;
-            if (albumId < 0) {
+            const albumId = this.#data.al?.id ?? null;
+            if (albumId == null) {
                 return null;
             }
             this.#albumCover = new AlbumCoverResource(albumId, resolution);
@@ -515,19 +479,6 @@ export class Track {
             this.#musicFile = new MusicFileResource(this.#data.id);
         }
         return this.#musicFile.load(apiAdapter);
-    }
-
-    /**
-     * 根据 Trace 获取资源
-     * @param {Object} sourceManager - 源管理器
-     * @returns {Promise<{objectURL: string, destroyObjectURL: Function}>}
-     */
-    async fetchResourceByTrace(sourceManager) {
-        const trace = this.primaryTrace;
-        if (!trace) {
-            throw new Error('No trace available');
-        }
-        return sourceManager.fetchResourceByTrace(trace);
     }
 
     releaseResources() {
@@ -544,292 +495,69 @@ export class Track {
     toRaw() {
         return { ...this.#data };
     }
+
+    static fromRawArray(rawArray) {
+        return rawArray.map(raw => Track.fromRaw(raw));
+    }
 }
 
-/**
- * Artist - 艺术家数据模型
- * 支持 Trace 来源追踪
- */
 export class Artist {
     #data;
-    #traces;
 
     constructor(artistData) {
         this.#data = artistData;
-        this.#traces = (artistData.traces || []).map(t => 
-            t instanceof Trace ? t : Trace.fromRaw(t)
-        );
     }
 
     static fromRaw(rawData) {
         return new Artist(rawData);
     }
 
+    static fromArtistFull(artistFull) {
+        return new Artist(artistFullToArtist(artistFull));
+    }
+
+    get id() { return this.#data.id; }
+    get name() { return this.#data.name; }
+    get alias() { return this.#data.alias ?? []; }
+
+    toRaw() { return { ...this.#data }; }
+
     static fromRawArray(rawArray) {
         return rawArray.map(raw => Artist.fromRaw(raw));
     }
-
-    // ========== 基本属性 ==========
-
-    get id() {
-        return this.#data.id;
-    }
-
-    get name() {
-        return this.#data.name;
-    }
-
-    get alias() {
-        return this.#data.alias ?? [];
-    }
-
-    get avatarUrl() {
-        return this.#data.avatarUrl ?? this.#data.picUrl ?? null;
-    }
-
-    get bio() {
-        return this.#data.bio ?? null;
-    }
-
-    // ========== Trace 来源追踪属性（统一接口）==========
-
-    /**
-     * 获取所有 Trace
-     * @returns {Trace[]}
-     */
-    get traces() {
-        return this.#traces;
-    }
-
-    /**
-     * 获取主 Trace 索引
-     * @returns {number}
-     */
-    get primaryTraceIndex() {
-        return this.#data.primary_trace_index ?? this.#data.primaryTraceIndex ?? 0;
-    }
-
-    /**
-     * 获取主 Trace
-     * @returns {Trace|null}
-     */
-    get primaryTrace() {
-        return this.#traces[this.primaryTraceIndex] || null;
-    }
-
-    /**
-     * 检查是否有本地资源
-     * @returns {boolean}
-     */
-    hasLocalResource() {
-        return this.#traces.some(t => t.isLocal());
-    }
-
-    /**
-     * 根据来源类型获取 Trace
-     * @param {string} sourceType - 来源类型 ('local' | 'webdav' | 'api')
-     * @returns {Trace|null}
-     */
-    getTraceBySourceType(sourceType) {
-        return this.#traces.find(t => {
-            if (sourceType === 'local') return t.isLocal();
-            if (sourceType === 'webdav') return t.isWebDAV();
-            if (sourceType === 'api') return t.isApi();
-            return false;
-        }) || null;
-    }
-
-    /**
-     * 跳转到来源数据
-     * @param {Object} sourceManager - 源管理器
-     * @returns {Promise<Artist>}
-     */
-    async navigateToSource(sourceManager) {
-        const trace = this.primaryTrace;
-        if (!trace) {
-            throw new Error('No trace available');
-        }
-        return sourceManager.navigateByTrace(trace);
-    }
-
-    // ========== 资源获取 ==========
-
-    /**
-     * 获取头像图片
-     * @param {Object} apiAdapter - API适配器
-     * @param {number} resolution - 分辨率
-     * @returns {Promise<Resource>}
-     */
-    async getAvatar(apiAdapter, resolution = 368) {
-        // 如果有本地资源，优先使用
-        const localTrace = this.getTraceBySourceType('local');
-        if (localTrace) {
-            return localTrace.fetchResource();
-        }
-        // 否则返回 URL
-        if (this.avatarUrl) {
-            return { url: this.avatarUrl };
-        }
-        return null;
-    }
-
-    toRaw() {
-        return { ...this.#data };
-    }
 }
 
-/**
- * Album - 专辑数据模型
- * 支持 Trace 来源追踪
- */
 export class Album {
     #data;
-    #traces;
 
     constructor(albumData) {
         this.#data = albumData;
-        this.#traces = (albumData.traces || []).map(t => 
-            t instanceof Trace ? t : Trace.fromRaw(t)
-        );
     }
 
     static fromRaw(rawData) {
         return new Album(rawData);
     }
 
-    static fromRawArray(rawArray) {
-        return rawArray.map(raw => Album.fromRaw(raw));
+    static fromAlbumFull(albumFull) {
+        return new Album(albumFullToAlbum(albumFull));
     }
 
-    // ========== 基本属性 ==========
+    get id() { return this.#data.id; }
+    get name() { return this.#data.name; }
+    get picUrl() { return this.#data.picUrl ?? this.#data.pic_url ?? ''; }
 
-    get id() {
-        return this.#data.id;
-    }
-
-    get name() {
-        return this.#data.name;
-    }
-
-    get picUrl() {
-        return this.#data.picUrl ?? this.#data.pic_url ?? this.#data.coverUrl ?? '';
-    }
-
-    get coverUrl() {
-        return this.picUrl;
-    }
-
-    get year() {
-        return this.#data.year ?? null;
-    }
-
-    get artists() {
-        return (this.#data.artists ?? this.#data.ar ?? []).map(a => 
-            a instanceof Artist ? a : Artist.fromRaw(a)
-        );
-    }
-
-    // ========== Trace 来源追踪属性（统一接口）==========
-
-    /**
-     * 获取所有 Trace
-     * @returns {Trace[]}
-     */
-    get traces() {
-        return this.#traces;
-    }
-
-    /**
-     * 获取主 Trace 索引
-     * @returns {number}
-     */
-    get primaryTraceIndex() {
-        return this.#data.primary_trace_index ?? this.#data.primaryTraceIndex ?? 0;
-    }
-
-    /**
-     * 获取主 Trace
-     * @returns {Trace|null}
-     */
-    get primaryTrace() {
-        return this.#traces[this.primaryTraceIndex] || null;
-    }
-
-    /**
-     * 检查是否有本地资源
-     * @returns {boolean}
-     */
-    hasLocalResource() {
-        return this.#traces.some(t => t.isLocal());
-    }
-
-    /**
-     * 根据来源类型获取 Trace
-     * @param {string} sourceType - 来源类型 ('local' | 'webdav' | 'api')
-     * @returns {Trace|null}
-     */
-    getTraceBySourceType(sourceType) {
-        return this.#traces.find(t => {
-            if (sourceType === 'local') return t.isLocal();
-            if (sourceType === 'webdav') return t.isWebDAV();
-            if (sourceType === 'api') return t.isApi();
-            return false;
-        }) || null;
-    }
-
-    /**
-     * 跳转到来源数据
-     * @param {Object} sourceManager - 源管理器
-     * @returns {Promise<Album>}
-     */
-    async navigateToSource(sourceManager) {
-        const trace = this.primaryTrace;
-        if (!trace) {
-            throw new Error('No trace available');
-        }
-        return sourceManager.navigateByTrace(trace);
-    }
-
-    /**
-     * 跳转到艺人页面
-     * @param {number} artistIndex - 艺人索引
-     * @returns {Artist|null}
-     */
-    navigateToArtist(artistIndex) {
-        const artist = this.artists[artistIndex];
-        if (artist && artist.primaryTrace) {
-            return artist;
-        }
-        return artist || null;
-    }
-
-    // ========== 资源获取 ==========
-
-    /**
-     * 获取封面图片
-     * @param {Object} apiAdapter - API适配器
-     * @param {number} resolution - 分辨率
-     * @returns {Promise<Resource>}
-     */
     async getCover(apiAdapter, resolution = 368) {
-        // 如果有本地资源，优先使用
-        const localTrace = this.getTraceBySourceType('local');
-        if (localTrace) {
-            return localTrace.fetchResource();
-        }
-        // 否则通过 API 获取
         const coverResource = new AlbumCoverResource(this.#data.id, resolution);
         return coverResource.load(apiAdapter);
     }
 
-    toRaw() {
-        return { ...this.#data };
+    toRaw() { return { ...this.#data }; }
+
+    static fromRawArray(rawArray) {
+        return rawArray.map(raw => Album.fromRaw(raw));
     }
 }
 
-/**
- * TrackList - 歌曲列表
- */
 export class TrackList {
     #tracks = [];
     #currentIndex = 0;
@@ -839,17 +567,9 @@ export class TrackList {
         this.#currentIndex = 0;
     }
 
-    get tracks() {
-        return this.#tracks;
-    }
-
-    get length() {
-        return this.#tracks.length;
-    }
-
-    get currentIndex() {
-        return this.#currentIndex;
-    }
+    get tracks() { return this.#tracks; }
+    get length() { return this.#tracks.length; }
+    get currentIndex() { return this.#currentIndex; }
 
     get currentTrack() {
         return this.#tracks[this.#currentIndex] ?? null;
@@ -912,3 +632,4 @@ export class TrackList {
 }
 
 export { Resource, ResourcePool };
+

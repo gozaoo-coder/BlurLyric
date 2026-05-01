@@ -22,7 +22,7 @@
             }
             
         },
-        inject:['appState','player']
+        inject:['appState','coverMusicTrack']
     }
 </script>
 

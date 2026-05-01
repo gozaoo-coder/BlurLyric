@@ -3,15 +3,14 @@
 </template>
 <script>
     export default{
-        inject:['player'],
+        inject:['trackState'],
         data(){
             return {
             }
         },
         computed:{
             _class(){
-                const mode = this.player?.state?.playMode || 'loopPlaylist';
-                switch (mode) {
+                switch (this.trackState.playMode) {
                     case 'loopPlaylist':
                         return ['bi','bi-repeat']
                     case 'loopSingle':

@@ -1,49 +1,48 @@
 <template>
-  <div class="image-container" ref="containerRef">
-    <div class="placeholder" v-show="!currentSrc || imageOpacity === 0">
+  <div class="image-container">
+    <!-- 占位组件 -->
+    <div class="placeholder">
       <i class="bi bi-music-note"></i>
     </div>
-    <div class="loading-skeleton" v-show="isLoading && imageOpacity === 0"></div>
-    <img
-      v-show="currentSrc"
+    <!-- 动态绑定的图片元素 -->
+    <img v-if="currentSrc" :src="currentSrc" class="loaded-image" :style="{ opacity: imageOpacity }" />
+    <!-- <img
+      v-if="currentSrc"
       :src="currentSrc"
-      class="loaded-image"
-      :style="{ opacity: imageOpacity }"
       @load="handleImageLoad"
       @error="handleImageError"
-    />
+      :style="{ opacity: 0, visibility: 'hidden' }"
+    /> -->
   </div>
 </template>
 
 <script>
 import manager from '../../api/manager';
-import lazyLoader from '../../api/lazyLoader';
-
 export default {
   data() {
     return {
-      imageOpacity: 0,
-      currentSrc: '',
+      imageOpacity: 0, // 控制图片透明度的数据属性
+      currentSrc: '', // 存储当前的ObjectURL
       nextTransilateTime: 0,
       timerID: undefined,
-      isLoading: false,
-      cacheKey: null,
-      pendingId: null,
+      objectURL: null, // 存储ObjectURL，以便于后续销毁,
+      destroyObjectURL: () => { },
     };
   },
   inject: ['regMessage'],
   props: {
     id: {
-      type: [String, Number],
-      default: "",
+      type: [String, Number], // id可以是字符串或数字
+      default: "", // 默认为空字符串，表示没有id
     },
     maxResolution: {
-      type: [Number, String],
-      default: 368,
-    },
+      type: [Number, String], // id可以是字符串或数字
+      default: 368, // 默认NORMAL分辨率 46 * 8
+    }
   },
   methods: {
     handleImageLoad(event) {
+      // 当图片加载完成时，执行淡入动画
       let delay = this.nextTransilateTime - Date.now();
       if (this.timerID !== undefined) {
         clearTimeout(this.timerID);
@@ -55,114 +54,65 @@ export default {
       } else {
         this.imageOpacity = 1;
       }
-      this.$emit("imageLoaded", event);
+      this.$emit("imageLoaded", event); // 触发imageLoaded事件，传递事件对象
     },
     handleImageError(error) {
-      this.$emit("imageError", error);
+      // 当图片加载失败时，可以处理错误
+      this.$emit("imageError", error); // 触发imageError事件，传递错误对象
     },
-
-    _getResourceCacheKey() {
-      const res = Number(this.maxResolution) || 368;
-      return `cover_${res}_${this.id}`;
-    },
-
     fadeOutImage() {
+      // 当id变化时，先淡出当前图片
       this.imageOpacity = 0;
       this.nextTransilateTime = Date.now() + 500;
       setTimeout(() => {
         this.fetchAlbumCover();
       }, 500);
     },
-
-    acquireResource(data) {
-      if (!data?.objectURL) return;
-
-      const newCacheKey = this._getResourceCacheKey();
-
-      if (this.cacheKey && this.cacheKey !== newCacheKey) {
-        this._releaseRefOnly();
-      }
-
-      this.cacheKey = newCacheKey;
-      const cached = lazyLoader.acquire(this.cacheKey, this.$refs.containerRef);
-
-      if (cached) {
-        this.currentSrc = cached.objectURL;
-      } else {
-        this.currentSrc = data.objectURL;
-      }
-    },
-
-    _releaseRefOnly() {
-      if (!this.cacheKey) return;
-      lazyLoader.release(this.cacheKey, this.$refs.containerRef);
-      this.cacheKey = null;
-    },
-
     async fetchAlbumCover() {
-      const targetId = this.id;
-      const targetKey = this._getResourceCacheKey();
-
-      if (this.cacheKey === targetKey && this.currentSrc) {
-        this.handleImageLoad();
-        return;
+      // 获取专辑封面并更新currentSrc
+      this.destroyObjectURL()
+      let result_message;
+      if (this.maxResolution != 0) {
+        //当不是获得原图时
+        result_message = this.regMessage({
+          type: "LongMessage",
+          content: "正在进行缩略图优化...",
+        })
       }
+      await manager.tauri.getAlbumCover(this.id, this.maxResolution).then(result => {
+        this.objectURL = result.objectURL; // 更新ObjectURL
+        this.currentSrc = result.objectURL;
+        // console.log(this);
 
-      this.pendingId = targetId;
-      this.isLoading = true;
-      this._releaseRefOnly();
-
-      let result_message = null;
-      const resolution = Number(this.maxResolution) || 0;
-
-      if (resolution !== 0) {
-        const isFromCache = lazyLoader.isCached(targetKey);
-        if (!isFromCache) {
-          result_message = this.regMessage({
-            type: "LongMessage",
-            content: "正在加载封面...",
-          });
-        }
-      }
-
-      try {
-        const result = await manager.tauri.getAlbumCover(targetId, this.maxResolution);
-
-        if (this.pendingId !== targetId) return;
-
-        this.acquireResource(result);
-        result_message?.destoryMessage?.();
+        this.destroyObjectURL = result.destroyObjectURL;
+        (result_message!=null&& result_message!=undefined)?result_message.destoryMessage():'';
 
         this.handleImageLoad();
-      } catch (err) {
-        if (err != 'Album cover not found') {
+      }).catch((err) => {
+        if (err != 'Album cover not found') { // 找不到专辑图片为正常现象
           console.log(err);
         }
-        result_message?.destoryMessage?.();
-      } finally {
-        if (this.pendingId === targetId) {
-          this.isLoading = false;
-          this.pendingId = null;
-        }
-      }
+      });
+
     },
   },
   watch: {
-    id: {
-      handler(newId, oldId) {
-        if (newId !== oldId && newId >= 0) {
-          this.fadeOutImage();
-        }
-      },
+    id(newId, oldId) {
+      // watch 仅处理 id 变更（带淡出动画），初始加载由 mounted 处理
+      if (newId !== oldId && newId != null && newId !== '' && newId !== -2) {
+        this.fadeOutImage();
+      }
     },
   },
   unmounted() {
-    this._releaseRefOnly();
-    this.currentSrc = '';
-    this.imageOpacity = 0;
+    // 组件注销前，销毁 ObjectURL
+    if (this.objectURL) {
+      this.destroyObjectURL();
+    }
   },
   mounted() {
-    if (this.id >= 0) {
+    // mounted 负责首次加载（无淡出延迟），避免与 watch 重复调用
+    if (this.id != null && this.id !== '' && this.id !== -2) {
       this.fetchAlbumCover();
     }
   },
@@ -187,27 +137,6 @@ export default {
   justify-content: center;
 }
 
-.loading-skeleton {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    110deg,
-    rgba(0, 0, 0, 0.04) 8%,
-    rgba(0, 0, 0, 0.08) 18%,
-    rgba(0, 0, 0, 0.04) 33%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-}
-
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
 .loaded-image {
   position: absolute;
   top: 0;
@@ -215,6 +144,8 @@ export default {
   width: 100%;
   height: auto;
   object-fit: cover;
+  /* 保持图片的比例，不拉伸 */
   transition: opacity .5s;
+  /* 淡入淡出动画 */
 }
 </style>

@@ -14,11 +14,6 @@ export function useSearch() {
   const searchHistory = ref([]);
   const searchError = ref(null);
 
-  // 多源搜索状态
-  const availableSources = ref([]);
-  const selectedSourceIds = ref([]);
-  const searchSources = ref({});
-
   // 搜索结果表格数据（适配 powerTable_music.vue 格式）
   const tableData = computed(() => {
     return {
@@ -33,37 +28,6 @@ export function useSearch() {
   const showEmpty = computed(() => {
     return !isSearching.value && searchKeyword.value && !hasResults.value;
   });
-
-  /**
-   * 加载可用的数据源
-   */
-  const loadAvailableSources = async () => {
-    try {
-      const sources = await apiManager.source.getAvailableSources();
-      availableSources.value = sources;
-      
-      // 默认选择所有可用的 API 源
-      const apiSources = sources.filter(s => s.available && s.type !== 'tauri');
-      if (selectedSourceIds.value.length === 0) {
-        selectedSourceIds.value = apiSources.map(s => s.sourceId);
-      }
-    } catch (e) {
-      console.warn('Failed to load available sources:', e);
-    }
-  };
-
-  /**
-   * 切换源选择
-   * @param {string} sourceId - 源 ID
-   */
-  const toggleSource = (sourceId) => {
-    const index = selectedSourceIds.value.indexOf(sourceId);
-    if (index > -1) {
-      selectedSourceIds.value.splice(index, 1);
-    } else {
-      selectedSourceIds.value.push(sourceId);
-    }
-  };
 
   /**
    * 执行搜索
@@ -82,30 +46,16 @@ export function useSearch() {
     searchError.value = null;
 
     try {
-      // 检查是否有选中的 API 源
-      const hasApiSources = selectedSourceIds.value.length > 0;
+      // 调用API搜索歌曲
+      const results = await apiManager.searchAll(trimmedKeyword);
       
+      // 处理搜索结果，统一格式
       let tracks = [];
       
-      if (hasApiSources) {
-        // 多源搜索
-        const result = await apiManager.source.searchAllSources(trimmedKeyword, {
-          sourceIds: selectedSourceIds.value,
-          includeLocal: selectedSourceIds.value.includes('local')
-        });
-        
-        tracks = result.tracks || [];
-        searchSources.value = result.sources || {};
-      } else {
-        // 仅本地搜索（向后兼容）
-        const results = await apiManager.searchAll(trimmedKeyword);
-        
-        if (results && results.tracks) {
-          tracks = results.tracks;
-        } else if (Array.isArray(results)) {
-          tracks = results;
-        }
-        searchSources.value = {};
+      if (results && results.tracks) {
+        tracks = results.tracks;
+      } else if (Array.isArray(results)) {
+        tracks = results;
       }
 
       // 格式化搜索结果，确保字段一致性
@@ -141,11 +91,9 @@ export function useSearch() {
         id: track.album?.id || -2,
         picUrl: track.album?.picUrl || track.picUrl || ''
       },
-      // Trace 来源追踪（统一接口）
-      traces: track.traces || [],
-      // 来源信息（多源搜索时添加）
-      sourceId: track.sourceId,
-      sourceName: track.sourceName,
+      // 源信息（用于多来源播放）
+      sources: track.sources || [],
+      primarySourceIndex: track.primarySourceIndex ?? 0,
       // 其他字段透传
       ...track
     };
@@ -226,7 +174,6 @@ export function useSearch() {
     searchResults.value = [];
     searchKeyword.value = '';
     searchError.value = null;
-    searchSources.value = {};
   };
 
   /**
@@ -245,11 +192,6 @@ export function useSearch() {
     hasResults,
     showEmpty,
 
-    // 多源搜索状态
-    availableSources,
-    selectedSourceIds,
-    searchSources,
-
     // 方法
     performSearch,
     debouncedSearch,
@@ -257,11 +199,7 @@ export function useSearch() {
     loadSearchHistory,
     clearHistory,
     removeFromHistory,
-    formatTrackData,
-    
-    // 多源搜索方法
-    loadAvailableSources,
-    toggleSource
+    formatTrackData
   };
 }
 

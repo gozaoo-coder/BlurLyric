@@ -24,6 +24,3 @@ dist-ssr
 *.sw?
 
 /src-tauri/music_dirs.json
-.codeartsdoer/*
-.trae/*
-

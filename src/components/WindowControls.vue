@@ -18,11 +18,6 @@ const emit = defineEmits(['toggle', 'close']);
 
 onMounted(() => {
   isTauri.value = !!(window.__TAURI_INTERNALS__);
-  
-  // 检测是否为移动平台
-  if (window.navigator.userAgent.match(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i)) {
-    isTauri.value = false; // 在移动平台上禁用窗口控制
-  }
 });
 
 /**
@@ -45,13 +40,14 @@ async function toggleAlwaysOnTop() {
  */
 async function closeWindow() {
   if (!isTauri.value) {
+    // 在 Web 环境中，尝试关闭标签页
     window.close();
     return;
   }
-
+  
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('close_app');
+    await invoke('close_window');
     emit('close');
   } catch (error) {
     console.error('关闭窗口失败:', error);

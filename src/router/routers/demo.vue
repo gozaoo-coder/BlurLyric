@@ -1,39 +1,30 @@
 <script>
 import contextMenu from '../../components/base/contextMenu.vue';
-import toggle from '../../components/base/toggle.vue';
-import tracksRow from '../../components/tracks/tracksRow.vue';
+import toggle from '../../components/base/toggle.vue'
+import tracksRow from '../../components/tracks/tracksRow.vue'
 import powerTableVue from '../../components/tracks/powerTable_music.vue';
 import text_contextMenu from '../../components/text_contextMenu.vue';
-import dialogVue from '../../components/base/dialog.vue';
-
+import dialogVue from '../../components/base/dialog.vue'
 export default {
-  name: 'DemoPage',
-  data() {
-    return {
-      state: true,
-      useDialog: false
-    };
-  },
-  computed: {
-    p() {
-      return this.player || {
-        state: { currentTrack: { name: '' }, playing: false, currentTime: 0, duration: 1 },
-        audioEngine: { play() {}, pause() {} }
-      };
+    data() {
+        return {
+            state: true,
+            useDialog: false
+        }
+    },
+    components: {
+        toggle,
+        tracksRow,
+        powerTableVue,
+        contextMenu,
+        text_contextMenu, dialogVue
+    },
+    inject: ['audioManager', 'audioState', 'currentMusicInfo'],
+    props: {},
+    methods: {
+
     }
-  },
-  components: {
-    toggle,
-    tracksRow,
-    powerTableVue,
-    contextMenu,
-    text_contextMenu,
-    dialogVue
-  },
-  inject: ['player'],
-  props: {},
-  methods: {}
-};
+}
 </script>
 
 <template>
@@ -43,12 +34,12 @@ export default {
 
     <h2>
         <span style="font-size: 0.8em;">曲名:</span><br>
-        <textspawn :text="p.state.currentTrack.name" />
+        <textspawn :text="currentMusicInfo.name" />
     </h2>
-    {{ p.state.currentTime }}，{{ p.state.duration }}<br>
-    进度：{{ ((p.state.currentTime / (p.state.duration || 1)) * 100).toFixed(2) + '%' }}
+    {{ audioState.currentTime }}，{{ audioState.duration }}<br>
+    进度：{{ ((audioState.currentTime / audioState.duration) * 100).toFixed(2) + '%' }}
 
-    <iconWithText v-if="p.state.playing == false" @click="p.audioEngine.play()" type="background">
+    <iconWithText v-if="audioState.playing == false" @click="audioManager.play()" type="background">
         <template #text>
             播放
         </template>
@@ -56,7 +47,7 @@ export default {
             <i class="bi bi-play-circle-fill"></i>
         </template>
     </iconWithText>
-    <iconWithText v-if="p.state.playing == true" @click="p.audioEngine.pause()" type="background">
+    <iconWithText v-if="audioState.playing == true" @click="audioManager.pause()" type="background">
         <template #text>
             暂停
         </template>
@@ -174,7 +165,6 @@ export default {
     <div>
 
 
-
     </div>
 </template>
 
@@ -183,6 +173,7 @@ export default {
     display: flex;
 
 }
+
 .buttomTrack>* {
     width: fit-content;
 }
